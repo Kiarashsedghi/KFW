@@ -10,6 +10,9 @@
 int main() {
 
 
+    ingress_policies_t ingress_policies;
+    egress_policies_t egress_policies;
+
     // Initialize program by creating kfw_controls to control kfw.
     // Setting cli_mode to 0 which is global mode of kfw
     regex__t kfw_regex;
@@ -24,6 +27,8 @@ int main() {
     // clearing kfw_controls.AUX_policy_name
     bzero(kfw_controls.AUX_policy_name,MAX_LEN_POLICY_NAME);
 
+    bzero(kfw_controls.AUX_policy_direction,MAX_LEN_POLICY_DIRECTION);
+    bzero(kfw_controls.AUX_interface_name,MAX_LEN_INTERFACE_NAME);
 
     bzero(kfw_controls.AUX_rule_type,MAX_LEN_RULE_TYPE);
     bzero(kfw_controls.AUX_rule_type,MAX_LEN_RULE_VALUE);
@@ -461,6 +466,211 @@ int main() {
 
         }
 
+        // service policy definition
+        else if (regexec(&kfw_regex.regex_service_policy_definition, kfw_controls.user_command, 0, NULL, 0) ==0) {
+
+            printf("service policy\n");
+            split_service_policy_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,
+                    kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,1,2,3);
+
+            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
+
+
+            if(kfw_controls.res==-1)
+                printe("Policy %s does not exist"); //TODO
+            else{
+
+                if(strncmp(kfw_controls.AUX_policy_direction,"in",2)==0){
+                    kfw_controls.res=get_index_of_policyint_in_ingress(&ingress_policies,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+                    if(kfw_controls.res==-1){
+
+                        bzero(&ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies],sizeof(policy_with_int_t));
+                        strcpy(ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies].policy_name,kfw_controls.AUX_policy_name);
+                        strcpy(ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies].interface_name,kfw_controls.AUX_interface_name);
+                        ingress_policies.current_ingress_policies++;
+
+
+                        printf("created new in ingress\n");
+                    } else
+                        printf("exist in array\n");
+                }
+                else if(strncmp(kfw_controls.AUX_policy_direction,"out",3)==0){
+                    kfw_controls.res=get_index_of_policyint_in_egress(&egress_policies,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+                    if(kfw_controls.res==-1){
+
+                        bzero(&egress_policies.policyWithInterfaces[egress_policies.current_egress_policies],sizeof(policy_with_int_t));
+                        strcpy(egress_policies.policyWithInterfaces[egress_policies.current_egress_policies].policy_name,kfw_controls.AUX_policy_name);
+                        strcpy(egress_policies.policyWithInterfaces[egress_policies.current_egress_policies].interface_name,kfw_controls.AUX_interface_name);
+                        egress_policies.current_egress_policies++;
+
+                        printf("created new in egress\n");
+                    } else
+                        printf("exist in array\n");
+                }
+
+                }
+
+        }
+
+        // service policy deletion
+        else if (regexec(&kfw_regex.regex_service_policy_deletion, kfw_controls.user_command, 0, NULL, 0) ==0) {
+
+            split_service_policy_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,
+                                         kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,2,3,4);
+
+            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
+
+            if(kfw_controls.res==-1)
+                printe("Policy %s does not exist\n"); //TODO
+            else{
+                // TODO‌ make this code better
+                if(strcmp(kfw_controls.AUX_policy_direction,"out")==0) {
+
+                    kfw_controls.res = get_index_of_policyint_in_egress(&egress_policies, kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+
+                    if(kfw_controls.res!=-1){
+
+                        // Deletion policy is like before
+                        if(kfw_controls.res==egress_policies.current_egress_policies-1){
+                            if(egress_policies.current_egress_policies-1!=-1)
+                                egress_policies.current_egress_policies--;
+                        }
+                        else{
+                            kfw_controls.res++;
+                            while(kfw_controls.res<=egress_policies.current_egress_policies-1){
+                                memcpy(&egress_policies.policyWithInterfaces[kfw_controls.res-1],&egress_policies.policyWithInterfaces[kfw_controls.res],sizeof(policy_with_int_t));
+                                kfw_controls.res++;
+                            }
+                            // update total number of policy_with_int
+                            egress_policies.current_egress_policies--;
+                        }
+                        printf("deleted successfully\n");
+
+                    }
+
+                }
+                else{
+
+                    kfw_controls.res = get_index_of_policyint_in_ingress(&ingress_policies, kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+
+
+                    if(kfw_controls.res!=-1){
+                        // Deletion policy is like before
+                        if(kfw_controls.res==ingress_policies.current_ingress_policies-1){
+                            if(ingress_policies.current_ingress_policies-1!=-1)
+                                ingress_policies.current_ingress_policies--;
+                        }
+                        else{
+                            kfw_controls.res++;
+                            while(kfw_controls.res<=ingress_policies.current_ingress_policies-1){
+                                memcpy(&ingress_policies.policyWithInterfaces[kfw_controls.res-1],&ingress_policies.policyWithInterfaces[kfw_controls.res],sizeof(policy_with_int_t));
+                                kfw_controls.res++;
+                            }
+                            // update total number of policy_with_int
+                            ingress_policies.current_ingress_policies--;
+
+                        }
+                        printf("deleted successfully\n");
+                    }
+                }
+            }
+        }
+
+        // show polices
+        else if (regexec(&kfw_regex.regex_show_polices, kfw_controls.user_command, 0, NULL, 0) ==0) {
+                printf("policies\n");
+                printf("-----------------\n");
+                for(int i=0;i<kfw_controls.current_kfw_policies;i++)
+                    printf("policy %s\n",kfw_controls.policies[i].name);
+        }
+
+        // show polices (in|out)
+        else if (regexec(&kfw_regex.regex_show_polices_with_dir, kfw_controls.user_command, 0, NULL, 0) ==0) {
+                split_string_with_position(kfw_controls.user_command,2,kfw_controls.AUX_policy_direction);
+
+                if(strcmp(kfw_controls.AUX_policy_direction,"in")==0) {
+                    printf("ingress policies\n");
+                    printf("-----------------\n");
+                    for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
+                        printf("%s , %s\n", ingress_policies.policyWithInterfaces[i].policy_name,
+                               ingress_policies.policyWithInterfaces[i].interface_name);
+                }
+                else {
+                    printf("egress policies\n");
+                    printf("-----------------\n");
+                    for(int i=0;i<egress_policies.current_egress_policies;i++)
+                        printf("%s , %s\n",egress_policies.policyWithInterfaces[i].policy_name,egress_policies.policyWithInterfaces[i].interface_name);
+
+            }
+        }
+
+        // show polices (INTERFACE)
+        else if (regexec(&kfw_regex.regex_show_policies_with_int, kfw_controls.user_command, 0, NULL, 0) ==0) {
+            split_string_with_position(kfw_controls.user_command, 2, kfw_controls.AUX_interface_name);
+
+            printf("Interface : %s\n", kfw_controls.AUX_interface_name);
+            printf("Ingress\n");
+
+            for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
+                if (strcmp(ingress_policies.policyWithInterfaces[i].interface_name, kfw_controls.AUX_interface_name) ==
+                    0){
+                    printf("   policy %s\n", ingress_policies.policyWithInterfaces[i].policy_name);
+                    break;
+                }
+            printf("engress\n");
+            for (int i = 0; i < egress_policies.current_egress_policies; i++)
+                if (strcmp(egress_policies.policyWithInterfaces[i].interface_name, kfw_controls.AUX_interface_name) ==
+                    0){
+                    printf("   policy %s\n", egress_policies.policyWithInterfaces[i].policy_name);
+                    break;
+                }
+
+        }
+
+        // show policies ( INTERFACE‌ ) (in | out)
+        else if (regexec(&kfw_regex.regex_show_policies_with_int_dir, kfw_controls.user_command, 0, NULL, 0) ==0) {
+            //TODO‌ make one function
+            //TODO make for to a function
+            split_string_with_position(kfw_controls.user_command, 2, kfw_controls.AUX_interface_name);
+            split_string_with_position(kfw_controls.user_command, 3, kfw_controls.AUX_policy_direction);
+
+            printf("Interface : %s\n", kfw_controls.AUX_interface_name);
+            if(strcmp(kfw_controls.AUX_policy_direction,"in")==0) {
+                    printf("Ingress\n");
+
+                    for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
+                        if (strcmp(ingress_policies.policyWithInterfaces[i].interface_name,
+                                   kfw_controls.AUX_interface_name) ==
+                            0) {
+                            printf("   policy %s\n", ingress_policies.policyWithInterfaces[i].policy_name);
+                            break;
+                        }
+            }
+            else {
+                printf("engress\n");
+                for (int i = 0; i < egress_policies.current_egress_policies; i++)
+                    if (strcmp(egress_policies.policyWithInterfaces[i].interface_name,
+                               kfw_controls.AUX_interface_name) ==
+                        0) {
+                        printf("   policy %s\n", egress_policies.policyWithInterfaces[i].policy_name);
+                        break;
+                    }
+            }
+        }
+
+        // show datas
+        else if (regexec(&kfw_regex.regex_show_datas, kfw_controls.user_command, 0, NULL, 0) ==0) {
+            printf("--------DATAS-------\n");
+            for(int i=0;i<kfw_controls.current_kfw_datas;i++){
+                if(kfw_controls.datas[i].type==1)
+                    printf("%s (all)\n",kfw_controls.datas[i].name);
+                else
+                    printf("%s (any)\n",kfw_controls.datas[i].name);
+
+            }
+
+        }
+
         // quit / exit
         else if (regexec(&kfw_regex.regex_quit_exit, kfw_controls.user_command, 0, NULL, 0) ==0){
             printf("Bye!!\n");
@@ -495,6 +705,29 @@ onebyte_np_t get_index_of_rule_in_rules(data_t *data_st ,onebyte_p_t *rule_type 
 
 }
 
+onebyte_np_t get_index_of_policyint_in_egress(egress_policies_t *egressPolicies , onebyte_p_t *policy_name , onebyte_p_t*interface_name){
+
+    for(int i=0;i<egressPolicies->current_egress_policies;i++){
+        if(strncmp(egressPolicies->policyWithInterfaces[i].policy_name,policy_name,strlen(policy_name))==0
+           && strcmp(egressPolicies->policyWithInterfaces[i].interface_name,interface_name)==0)
+
+                return i;
+    }
+    return -1;
+
+}
+
+onebyte_np_t get_index_of_policyint_in_ingress(ingress_policies_t *ingressPolicies , onebyte_p_t *policy_name ,onebyte_p_t *interface_name){
+
+    for(int i=0;i<ingressPolicies->current_ingress_policies;i++){
+        if(strncmp(ingressPolicies->policyWithInterfaces[i].policy_name,policy_name,strlen(policy_name))==0
+        && strcmp(ingressPolicies->policyWithInterfaces[i].interface_name,interface_name)==0)
+            return i;
+    }
+    return -1;
+
+}
+
 onebyte_np_t get_index_of_datawithaction_in_policies(policy_t *policy , onebyte_p_t *data_name){
     for(int i=0;i<policy->current_data_actions;i++){
         if(strncmp(policy->data_with_actions[i].data_name,data_name,strlen(data_name))==0)
@@ -522,6 +755,82 @@ onebyte_np_t get_index_of_policy_in_policies(kfw_controls_t *kfw_controls,onebyt
     return -1;
 
 }
+
+void split_string_with_position(onebyte_p_t *str,onebyte_p_t position , onebyte_p_t * dst){
+    bzero(dst,strlen(dst));
+    onebyte_p_t element_pos=-1;
+    onebyte_p_t *temp;
+    while(*str){
+        if(*str==32 || *str==10 || *str==9)
+            str++;
+        else{
+            element_pos++;
+            if(element_pos==position){
+                temp=str;
+                while (*str != 32 && *str != 10 && *str != 9)
+                    str++;
+                memcpy(dst,temp,str-temp);
+                break;
+            }
+            else
+                while (*str != 32 && *str != 10 && *str != 9)
+                    str++;
+        }
+    }
+}
+
+void split_service_policy_command(onebyte_p_t *service_policy_cmd,onebyte_p_t *policy_name,onebyte_p_t *interface_name ,onebyte_p_t * direction,
+        onebyte_p_t policy_name_pos ,onebyte_p_t interface_name_pos,onebyte_p_t direction_pos){
+
+
+    // service asd
+    onebyte_p_t service_policy_command_ele=-1;
+    onebyte_p_t *temp;
+
+    bzero(policy_name,strlen(policy_name));
+    bzero(interface_name,strlen(interface_name));
+    bzero(direction,strlen(direction));
+
+    while(*service_policy_cmd){
+        if(*service_policy_cmd==32 || *service_policy_cmd==10 || *service_policy_cmd==9)
+            service_policy_cmd++;
+        else{
+            service_policy_command_ele++;
+            if(service_policy_command_ele==0 && policy_name_pos==2)
+                service_policy_cmd+=2;  // skipping (no) in negative form
+
+            else if((service_policy_command_ele==0 && policy_name_pos==1)||(service_policy_command_ele==1 && policy_name_pos==2))
+                service_policy_cmd+=7;  // skipping (service) in positive and negative form
+
+            else{
+                temp=service_policy_cmd;
+                while(*service_policy_cmd!=32 && *service_policy_cmd!=10 && *service_policy_cmd!=9)
+                    service_policy_cmd++;
+
+                if(service_policy_command_ele==policy_name_pos)
+                    memcpy(policy_name,temp,service_policy_cmd-temp);
+
+                else if(service_policy_command_ele==interface_name_pos)
+                    memcpy(interface_name,temp,service_policy_cmd-temp);
+
+                else  if(service_policy_command_ele==direction_pos)
+                    memcpy(direction,temp,service_policy_cmd-temp);
+            }
+
+//            else if(service_policy_command_ele==action_pos){
+//                temp=service_policy_cmd;
+//                while(*service_policy_cmd!=32 && *service_policy_cmd!=10 && *service_policy_cmd!=9)
+//                    service_policy_cmd++;
+//                memcpy(action,temp,service_policy_cmd-temp);
+//                // we put break to end the function at this point because
+//                // we have collected all the things we need
+//                break;
+//            }
+        }
+
+    }
+}
+
 
 void split_data_with_action_command(onebyte_p_t *data_with_action_cmd,onebyte_p_t *data_name,onebyte_p_t *action , onebyte_p_t data_name_pos ,onebyte_p_t action_pos){
     onebyte_p_t data_with_action_command_ele=-1;
@@ -688,7 +997,31 @@ void setup_kfw_commands_regex(regex__t *kfwregex){
         printe("policy_deletion regex compilation error");
     }
 
+    if (regcomp(&kfwregex->regex_service_policy_definition,REGEX_SERVICE_POLICY_DEFINITION,REG_EXTENDED) != 0) {
+        printe("service_policy_definition regex compilation error");
+    }
+    if (regcomp(&kfwregex->regex_service_policy_deletion,REGEX_SERVICE_POLICY_DELETION,REG_EXTENDED) != 0) {
+        printe("service_policy_deletion regex compilation error");
+    }
 
+    if (regcomp(&kfwregex->regex_show_polices,REGEX_SHOW_POLICIES,REG_EXTENDED) != 0) {
+        printe("show_policies regex compilation error");
+    }
+    if (regcomp(&kfwregex->regex_show_polices_with_dir,REGEX_SHOW_POLICIES_WITH_DIRECTION,REG_EXTENDED) != 0) {
+        printe("show_policies_with_dir regex compilation error");
+    }
+
+    if (regcomp(&kfwregex->regex_show_policies_with_int,REGEX_SHOW_POLICIES_WITH_INTERFACE,REG_EXTENDED) != 0) {
+        printe("show_policies_with_int regex compilation error");
+    }
+
+    if (regcomp(&kfwregex->regex_show_policies_with_int_dir,REGEX_SHOW_POLICIES_WITH_INTERFACE_DIR,REG_EXTENDED) != 0) {
+        printe("show_policies_with_int_dir regex compilation error");
+    }
+
+    if (regcomp(&kfwregex->regex_show_datas,REGEX_SHOW_DATAS,REG_EXTENDED) != 0) {
+        printe("show_datas regex compilation error");
+    }
 
     if (regcomp(&kfwregex->regex_data_action_definition,REGEX_DATA_ACTION_DEFINITION,REG_EXTENDED) != 0) {
         printe("data_action regex compilation error");

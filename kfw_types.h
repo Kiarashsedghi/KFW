@@ -14,8 +14,9 @@
 #define MAX_LEN_POLICY_NAME 30
 #define MAX_LEN_INTERFACE_NAME 15
 #define MAX_LEN_ACTION_NAME 7
-#define MAX_INGRESS_POLICIES 10
-#define MAX_EGRESS_POLICIES 10
+#define MAX_LEN_POLICY_DIRECTION 2
+#define MAX_INGRESS_POLICIES 100
+#define MAX_EGRESS_POLICIES 100
 #define MAX_DATA_ACTIONS_IN_POLICY 20
 #define MAX_RULES_IN_DATA  10
 
@@ -24,18 +25,18 @@
 
 #define MAX_LEN_USER_COMMAND 40
 #define REGEX_DATA_DEFINITION "^\\s*data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"
-#define REGEX_DATA_DELETION "^\\s*(no\\s+)?data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"
+#define REGEX_DATA_DELETION "^\\s*(no\\s+)data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"
 
 #define REGEX_RULE_DEFINITION "^\\s*(proto)\\s+(udp|tcp)\\s*$"
 
 // TODO‌ make (value)? value part of rule for simplicity of deletion for user
-#define REGEX_RULE_DELETION "^\\s*(no\\s+)?(proto)\\s+(udp|tcp)\\s*$"
+#define REGEX_RULE_DELETION "^\\s*(no\\s+)(proto)\\s+(udp|tcp)\\s*$"
 #define REGEX_POLICY_DEFINITION "^\\s*policy\\s+[a-zA-Z_0-9]+\\s*$"
-#define REGEX_POLICY_DELETION "^\\s*(no\\s+)?policy\\s+[a-zA-Z_0-9]+\\s*$"
+#define REGEX_POLICY_DELETION "^\\s*(no\\s+)policy\\s+[a-zA-Z_0-9]+\\s*$"
 
 
 #define REGEX_DATA_ACTION_DEFINITION "^\\s*[a-zA-Z_0-9]+\\s+(permit|deny)\\s*$"
-#define REGEX_DATA_ACTION_DELETION "^\\s*(no\\s+)?[a-zA-Z_0-9]+(\\s+(permit|deny))?\\s*$"
+#define REGEX_DATA_ACTION_DELETION "^\\s*(no\\s+)[a-zA-Z_0-9]+(\\s+(permit|deny))?\\s*$"
 
 #define REGEX_QUIT_EXIT "^\\s*(quit|exit)\\s*$"
 #define REGEX_BACK_TO_PREVIOUS_MODE "^\\s*back\\s*$"
@@ -46,8 +47,19 @@
 #define REGEX_QUICK_SHOW "^\\s*\\?\\s*$"
 #define REGEX_QUICK_CLEAR "^\\s*clear\\s*$"
 
+#define REGEX_SERVICE_POLICY_DEFINITION "^\\s*service\\s+[a-zA-Z_0-9]+\\s+[a-zA-Z0-9_]+\\s+(in|out)\\s*$"
+#define REGEX_SERVICE_POLICY_DELETION "^\\s*(no\\s+)service\\s+[a-zA-Z_0-9]+\\s+[a-zA-Z0-9_]+\\s+(in|out)\\s*$"
 
 
+#define REGEX_SHOW_POLICIES "^\\s*show\\s+policies\\s*$"
+#define REGEX_SHOW_DATAS "^\\s*show\\s+datas\\s*$"
+
+
+#define REGEX_SHOW_POLICIES_WITH_DIRECTION "\\s*show\\s+policies\\s+(in|out)\\s*"
+
+#define REGEX_SHOW_POLICIES_WITH_INTERFACE "^\\s*show\\s+policies\\s+[a-zA-Z_0-9]+\\s*$"
+
+#define REGEX_SHOW_POLICIES_WITH_INTERFACE_DIR "^\\s*show\\s+policies\\s+[a-zA-Z_0-9]+\\s+(in|out)\\s*$"
 
 #define REGEX_WHITESPACE "\\s+"
 //
@@ -104,7 +116,7 @@ struct policy{
 };
 
 struct policy_with_int{
-    policy_t policy;
+    onebyte_p_t policy_name[MAX_LEN_POLICY_NAME];
     onebyte_p_t interface_name[MAX_LEN_INTERFACE_NAME];   //TODO‌ interface type or code ??
 };
 
@@ -132,19 +144,32 @@ struct regex{
     regex_t regex_data_action_deletion;
     regex_t regex_show_data_command;
     regex_t regex_show_policy_command;
+
     // quick show can be issued when you are in either data definition mode or
     // policy definition
     regex_t regex_quick_show;
     regex_t regex_quick_clear;
 
+    regex_t regex_service_policy_definition;
+    regex_t regex_service_policy_deletion;
+
+
+    regex_t regex_show_datas;
+
+    regex_t regex_show_polices;
+    regex_t regex_show_polices_with_dir;
+
+    regex_t regex_show_policies_with_int;
+    regex_t regex_show_policies_with_int_dir;
+
+
 };
 
 struct kfw_controls{
-//    ingress_policies_t ingress_policies;
-//    egress_policies_t egress_policies;
+    ingress_policies_t ingress_policies;
+    egress_policies_t  egress_policies;
 
     onebyte_p_t user_command[MAX_LEN_USER_COMMAND];
-//    onebyte_p_t user_command_ns[1];
 
 
 
@@ -169,6 +194,9 @@ struct kfw_controls{
 
     data_with_action_t *AUX_data_action_st_ptr;
     onebyte_p_t AUX_action_name[MAX_LEN_ACTION_NAME];
+
+    onebyte_p_t AUX_interface_name[MAX_LEN_INTERFACE_NAME];
+    onebyte_p_t AUX_policy_direction[MAX_LEN_POLICY_DIRECTION];
 
 
 
@@ -211,18 +239,22 @@ void setup_kfw_commands_regex(regex__t *kfwregex);
 void printe(char * error_message);
 
 
-void split_data_definition_command(onebyte_p_t * data_def , onebyte_p_t *data_name ,onebyte_p_t *type , onebyte_p_t data_name_pos ,onebyte_p_t show_or_no_len);
+void split_string_with_position(onebyte_p_t *str,onebyte_p_t position , onebyte_p_t * dst);
 
+
+void split_data_definition_command(onebyte_p_t * data_def , onebyte_p_t *data_name ,onebyte_p_t *type , onebyte_p_t data_name_pos ,onebyte_p_t show_or_no_len);
 void split_rule_definition_command(onebyte_p_t *rule_def,onebyte_p_t *rule_name,onebyte_p_t *rule_value , onebyte_p_t name_pos ,onebyte_p_t value_pos);
 void split_policy_definition_command(onebyte_p_t *policy_def,onebyte_p_t *policy_name , onebyte_p_t name_pos ,onebyte_p_t show_or_no_len);
 void split_data_with_action_command(onebyte_p_t *data_with_action_cmd,onebyte_p_t *data_name,onebyte_p_t *action , onebyte_p_t data_name_pos ,onebyte_p_t action_pos);
+void split_service_policy_command(onebyte_p_t *service_policy_cmd,onebyte_p_t *policy_name,onebyte_p_t *interface_name ,onebyte_p_t * direction,
+                                  onebyte_p_t policy_name_pos ,onebyte_p_t interface_name_pos,onebyte_p_t direction_pos);
+
 onebyte_np_t get_index_of_datawithaction_in_policies(policy_t *policy , onebyte_p_t *data_name);
 onebyte_np_t get_index_of_data_in_datas(kfw_controls_t *kfw_controls,onebyte_p_t *data_name);
 onebyte_np_t get_index_of_rule_in_rules(data_t *data_st ,onebyte_p_t *rule_type );
 onebyte_np_t get_index_of_policy_in_policies(kfw_controls_t *kfw_controls,onebyte_p_t *policy_name);
+onebyte_np_t get_index_of_policyint_in_ingress(ingress_policies_t *ingressPolicies , onebyte_p_t *policy_name ,onebyte_p_t *interface_name);
 
-//
-
-
+onebyte_np_t get_index_of_policyint_in_egress(egress_policies_t *egressPolicies , onebyte_p_t *policy_name , onebyte_p_t*interface_name);
 
 #endif //KFW_KFW_TYPES_H
