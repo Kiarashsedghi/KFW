@@ -1,17 +1,395 @@
 #include <stdio.h>
 #include "string.h"
 #include "regex.h"
-#include "kfw_types.h"
-
+#include "kfw.h"
+#include <unistd.h>
+#include <stdlib.h>
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpointer-sign"
 
+
+
+twobyte_p_t  send_to_kernel(consistency_flags_t *consistencyFlags,kfw_controls_t *kfw_controls,kfwp_controls_t *kfwp_controls ,onebyte_p_t type,onebyte_p_t*arg1,onebyte_p_t  *arg2,
+        onebyte_p_t *context,data_t *data_ptr , policy_t * policy_ptr){
+
+    kfwp_controls->nlh=NULL;
+
+
+    kfwp_controls->sock_fd=socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
+
+    if(kfwp_controls->sock_fd<0)
+        return -1;
+
+    memset(&kfwp_controls->src_addr, 0, sizeof(kfwp_controls->src_addr));
+    kfwp_controls->src_addr.nl_family = AF_NETLINK;
+    kfwp_controls->src_addr.nl_pid = getpid(); /* self pid */
+
+    bind(kfwp_controls->sock_fd, (struct sockaddr*)&kfwp_controls->src_addr, sizeof(kfwp_controls->src_addr));
+
+    memset(&kfwp_controls->dest_addr, 0, sizeof(kfwp_controls->dest_addr));
+    kfwp_controls->dest_addr.nl_family = AF_NETLINK;
+    kfwp_controls->dest_addr.nl_pid = 0; /* For Linux Kernel */
+    kfwp_controls->dest_addr.nl_groups = 0; /* unicast */
+
+
+    kfwp_controls->nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(1024));
+    memset(kfwp_controls->nlh, 0, NLMSG_SPACE(1024));
+    kfwp_controls->nlh->nlmsg_len = NLMSG_SPACE(1024);
+    kfwp_controls->nlh->nlmsg_pid = getpid();
+    kfwp_controls->nlh->nlmsg_flags = 0;
+
+
+
+    kfwp_controls->iov.iov_base = (void *)kfwp_controls->nlh;
+    kfwp_controls->iov.iov_len = kfwp_controls->nlh->nlmsg_len;
+    kfwp_controls->msg.msg_name = (void *)&kfwp_controls->dest_addr;
+    kfwp_controls->msg.msg_namelen = sizeof(kfwp_controls->dest_addr);
+    kfwp_controls->msg.msg_iov = &kfwp_controls->iov;
+    kfwp_controls->msg.msg_iovlen = 1;
+
+
+
+
+
+
+    kfwp_controls->kfwp_msg=(kfwp_req_t *)malloc(60);
+
+    bzero(kfwp_controls->kfwp_msg,sizeof(kfwp_req_t));
+    kfwp_controls->kfwp_msg->type=type;
+
+    // arg1 should not be copied for (show datas , show policies) commands
+    // in those commands , arg1 is NULL
+    if(arg1!=NULL)
+        strcpy(kfwp_controls->kfwp_msg->arg1,arg1);
+
+    // This checking is for policies that does not have arg2 like policy definition
+    if(arg2!=NULL) {
+        if (type == 0b00000000)
+            memcpy(kfwp_controls->kfwp_msg->arg2, arg2, 1);
+        else
+            memcpy(kfwp_controls->kfwp_msg->arg2, arg2, strlen(arg2));
+    }
+    if (context != NULL)
+        memcpy(kfwp_controls->kfwp_msg->context, context, strlen(context));
+
+    printf("ctx:%s\n",kfwp_controls->kfwp_msg->context);
+
+
+    memcpy(NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwp_msg, sizeof(kfwp_req_t));
+
+    printf("Sent1%s\n",kfwp_controls->kfwp_msg->arg1);
+    printf("Sent2\n");
+
+    printf("Sent3\n");
+
+    sendmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+
+    printf("Sent\n");
+    free(kfwp_controls->kfwp_msg);
+    printf("inja bade sent\n");
+
+
+    kfwp_controls->kfwprep_msg=(kfwp_reply_t *)malloc(4);
+
+
+    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+    printf("inja bade sent3\n");
+
+    // read first 3 bytes
+    memcpy(kfwp_controls->kfwprep_msg,NLMSG_DATA(kfwp_controls->nlh),4);
+    // read rest of the bytes
+//    memcpy(kfwp_controls->kfwprep_msg + 3, NLMSG_DATA(kfwp_controls->nlh) ,kfwp_controls->kfwprep_msg->payload_size);
+
+
+
+    if((kfwp_controls->kfwprep_msg->status)==0b00000000) {
+        if (type == 0b00000000) {
+            if (kfwp_controls->kfwprep_msg->dg_cnt != 0) {
+                printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_cnt);
+                printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_size);
+
+
+
+                if (data_ptr == NULL) {
+
+                    kfw_controls->AUX_data_st_ptr = &kfw_controls->datas[kfw_controls->current_kfw_datas];
+                    data_ptr=kfw_controls->AUX_data_st_ptr;
+                    kfw_controls->current_kfw_datas++;
+                    printf("new data allocated on cache\n");
+                }
+
+
+                for(int i=0;i<kfwp_controls->kfwprep_msg->dg_cnt;i++) {
+                    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                    if (i == kfwp_controls->kfwprep_msg->dg_cnt - 1) {
+                        memcpy((void *) data_ptr + i * kfwp_controls->kfwprep_msg->dg_size,
+                               NLMSG_DATA(kfwp_controls->nlh),
+                               sizeof(data_t) - i * kfwp_controls->kfwprep_msg->dg_size+1);
+
+
+                    }else
+                        memcpy((void *) data_ptr + i * kfwp_controls->kfwprep_msg->dg_size,
+                               NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwprep_msg->dg_size);
+
+                }
+
+                // set consistency flag to 1
+                data_ptr->consistency=1;
+
+
+
+
+                close(kfwp_controls->sock_fd);
+
+                // return number of bytes written to the destination
+                return  sizeof(data_t);
+
+            } else
+                printf("success creation of data no data\n");
+        }
+
+        else if(type == 0b10000000)
+            printf("data deleted successfully!\n");
+
+        else if(type == 0b10000010)
+            printf("policy deleted successfully!\n");
+
+        else if(type==0b00001110){
+            printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_cnt);
+            printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_size);
+
+
+            for(int i=0;i<kfwp_controls->kfwprep_msg->dg_cnt;i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+
+
+                memcpy((void *)&kfw_controls->datas+i*sizeof(data_t) , NLMSG_DATA(kfwp_controls->nlh) ,kfwp_controls->kfwprep_msg->dg_size);
+
+                // make each datas consistency to 0
+                kfw_controls->datas[i].consistency=0;
+                printf("%d",i);
+            }
+            printf("data 1 %s %d\n",kfw_controls->datas[0].name,kfw_controls->datas[0].current_rules);
+            printf("data 2 %s %d\n",kfw_controls->datas[1].name,kfw_controls->datas[1].current_rules);
+
+            printf("writing headers completed\n");
+
+            //update number of current datas
+            kfw_controls->current_kfw_datas=kfwp_controls->kfwprep_msg->dg_cnt;
+
+            // set datas consistancy flag to 1
+            // later show datas does not need request
+            consistencyFlags->datas=1;
+
+
+        }
+
+
+        else if(type==0b00001111){
+
+            printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_cnt);
+            printf("sth%d\n", kfwp_controls->kfwprep_msg->dg_size);
+
+
+            for(int i=0;i<kfwp_controls->kfwprep_msg->dg_cnt;i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+
+
+                memcpy((void *)&kfw_controls->policies+i*sizeof(policy_t) , NLMSG_DATA(kfwp_controls->nlh) ,kfwp_controls->kfwprep_msg->dg_size);
+
+                // make each datas consistency to 0
+                kfw_controls->policies[i].consistency=0;
+                printf("%d",i);
+            }
+            printf("writing headers completed\n");
+
+            //update number of current datas
+            kfw_controls->current_kfw_policies=kfwp_controls->kfwprep_msg->dg_cnt;
+
+            printf(">>>>>%s",kfw_controls->policies[0].name);
+            // set policies consistancy flag to 1
+            // later show datas does not need request
+            consistencyFlags->policies=1;
+
+        }
+
+
+        else if (type == 0b00000010){
+
+            if (kfwp_controls->kfwprep_msg->dg_cnt != 0) {
+                printf("policy :sth%d\n", kfwp_controls->kfwprep_msg->dg_cnt);
+                printf("policy :sth%d\n", kfwp_controls->kfwprep_msg->dg_size);
+
+
+                if (data_ptr == NULL) {
+
+                    kfw_controls->AUX_policy_st_ptr= &kfw_controls->policies[kfw_controls->current_kfw_policies];
+
+                    policy_ptr=kfw_controls->AUX_policy_st_ptr;
+
+                    kfw_controls->current_kfw_policies++;
+                    printf("new policy allocated on cache\n");
+                }
+
+
+                for(int i=0;i<kfwp_controls->kfwprep_msg->dg_cnt;i++) {
+                    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                    if (i == kfwp_controls->kfwprep_msg->dg_cnt - 1) {
+                        memcpy((void *) policy_ptr + i * kfwp_controls->kfwprep_msg->dg_size,
+                               NLMSG_DATA(kfwp_controls->nlh),
+                               sizeof(policy_t) - i * kfwp_controls->kfwprep_msg->dg_size+1);
+
+
+                    }else
+                        memcpy((void *) policy_ptr + i * kfwp_controls->kfwprep_msg->dg_size,
+                               NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwprep_msg->dg_size);
+
+                }
+
+                // set consistency flag to 1
+                policy_ptr->consistency=1;
+
+                printf("policy name :%s\n",policy_ptr->name);
+                printf("currr  :%d\n",policy_ptr->current_data_actions);
+
+
+                close(kfwp_controls->sock_fd);
+
+                // return number of bytes written to the destination
+                return  sizeof(policy_t);
+
+            } else
+                printf("success creation of policy no data\n");
+
+        }
+
+
+        else if(type==0b00000001 || type==0b10000001)
+            printf("rule modified(added/deleted/changed) successfully\n");
+
+
+        else if(type==0b00000011 || type==0b10000011)
+            printf("data_with_action modified(added/deleted/changed) successfully\n");
+
+
+
+        else if(type == 0b01111110)
+            printf("rules cleared successfully\n");
+
+        else if(type == 0b01111111)
+            printf("data_with_actions cleared successfully\n");
+
+        else if(type==0b00000100)
+            printf("success of service command\n");
+
+        else if(type==0b10000100)
+            printf("success of  no service command\n");
+
+
+    }
+
+    else if((kfwp_controls->kfwprep_msg->status )==0b00000001) {
+
+        if(type==0b00000000)
+            printe("Cannot change type for data %s\nTo change the type first delete the type and recreate it"); //TODO‌
+
+
+        else if(type==0b00000011)
+            printe("Data does not exis"); //TODO‌
+
+
+        else if(type==0b10000010) {
+            printf("an ingress policy relies on the policy\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+        else if(type == 0b00000100)
+            printf("policy_name does not exist for service command\n");
+
+
+
+
+    }
+
+    else if ((kfwp_controls->kfwprep_msg->status)==0b00000010){
+        if(type==0b10000000) {
+            printf("the data_name does not exist to delete\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the data has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+
+        else if(type==0b10000010) {
+            printf("an egress policy relies on the policy\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+
+        }
+
+
+        else if(type==0b10000100)
+            printf("policy_name exist on kfw but was not set on this interface in this direction");
+
+
+    }
+
+    else if ((kfwp_controls->kfwprep_msg->status)==0b00000011){
+        if(type==0b10000000) {
+            printf(" policy dependency , cannot delete data \n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the data has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+        else if(type==0b10000010) {
+            printf(" the policy does not exist to delete\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+
+        }
+
+    }
+
+    else if((kfwp_controls->kfwprep_msg->status)==0b00000100){
+        if(type==0b00000000)
+            printf("data name does not exist for show command \n");
+        else if(type==0b00000010)
+            printf("policy name does not exist for show command \n");
+
+    }
+
+    else if((kfwp_controls->kfwprep_msg->status)==0b10000000){
+        if(type==0b00000100)
+            printf("policy existed and updated \n");
+    }
+
+    close(kfwp_controls->sock_fd);
+
+    return 0;
+
+
+
+
+}
 
 int main() {
 
 
     ingress_policies_t ingress_policies;
     egress_policies_t egress_policies;
+
+    consistency_flags_t consistencyFlags;
+    consistencyFlags.datas=0;
+    consistencyFlags.policies=0;
+    consistencyFlags.ingress_policies=0;
+    consistencyFlags.egress_policies=0;
 
     // Initialize program by creating kfw_controls to control kfw.
     // Setting cli_mode to 0 which is global mode of kfw
@@ -36,62 +414,100 @@ int main() {
 
     setup_kfw_commands_regex(&kfw_regex);
 
+    //---------connecting to kernel-------------
+    kfwp_controls_t kfwp_controls;
 
 
+
+    // Connection --------------------------------
 
 
     while(1){
-          printf("kfw> ");
-          fgets(kfw_controls.user_command,MAX_LEN_USER_COMMAND,stdin);
-
+        printf("kfw> ");
+        fgets(kfw_controls.user_command,MAX_LEN_USER_COMMAND,stdin);
 
         // data definition
         if(regexec(&(kfw_regex.regex_data_definition), kfw_controls.user_command, 0, NULL, 0) ==0) {
 
-
-            /* When user issues ( data DATA_NAME ) , first we should check
-             * whether user has already defined a data with type DATA_NAME or not.
+            /*
+             * When user issues ( data DATA_NAME ) , first we should check our datas cache.
+             * If we found a data , we then check its consistency with kernel module.
+             *  if it was consistent , it is ok.
+             *  else we send kfwp request
              *
-             * So first we split data command to find the type and type of data specified by user.
-             * We store the type and type in AUX variables.
-            */
+             * Else we send kfwp request
+             * */
 
-            // clear kfw_controls.AUX_data_name for new name
-            // TODO‌ it is not necessary > bzero(kfw_controls.AUX_data_name,strlen(kfw_controls.AUX_data_name));
 
             split_data_definition_command(kfw_controls.user_command, kfw_controls.AUX_data_name, &kfw_controls.AUX_data_type,1,0);
 
-            // check existence of a data with type specified by command which is stored in AUX_data_name.
+
+            // check existence of a data with name specified by command which is stored in AUX_data_name.
             // If it does exist we get index of it , else we get -1.
-            kfw_controls.res=get_index_of_data_in_datas(&kfw_controls,kfw_controls.AUX_data_name);
+            kfw_controls.AUX_functions_returns=get_index_of_data_in_datas(&kfw_controls, kfw_controls.AUX_data_name);
 
 
-            // A data with type AUX_data_name does not exist so we allocate new one in
-            // kfw_controls.datas
-            if(kfw_controls.res==-1){
-                kfw_controls.AUX_data_st_ptr=&(kfw_controls.datas[kfw_controls.current_kfw_datas]);
-                // zero all that structure ( initialize )
-                bzero(kfw_controls.AUX_data_st_ptr,sizeof(data_t));
+            // A data with type AUX_data_name does not exist so we send kfwp request to kernel
+            // to create new one
+            if(kfw_controls.AUX_functions_returns == -1){
+                printf("new\n");
+                kfw_controls.AUX_data_st_ptr=&kfw_controls.datas[kfw_controls.current_kfw_datas];
 
-                kfw_controls.AUX_data_st_ptr->type=kfw_controls.AUX_data_type;
+                kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
 
-                strcpy(kfw_controls.AUX_data_st_ptr->name, kfw_controls.AUX_data_name);
 
-                // update total number of datas in kfw datas
-                kfw_controls.current_kfw_datas++;
+                printf("bytes:%d\n",kfw_controls.AUX_functions_returns);
+                // if we had bytes written to that address
+                if(kfw_controls.AUX_functions_returns !=0){
+                    kfw_controls.AUX_data_st_ptr->consistency=1;
+                    kfw_controls.current_kfw_datas++;
+                }
+
+                else
+                    kfw_controls.AUX_data_st_ptr=NULL;
+
+
+                // set datas array consistancy to 0 because a new data
+                // was created
+                consistencyFlags.datas=1;
+
             }
             else {
-                /* We should check whether data_type specified by user_command matches
-                 * data_type of the data we have found.
-                 *
-                 * Users Cannot change the type whenever they enter data definition mode.
-                */
-                if(kfw_controls.datas[kfw_controls.res].type!=kfw_controls.AUX_data_type){
-                    printe("Cannot change type for data %s\nTo change the type first delete the type and recreate it"); //TODO‌
-                    continue;
+                printf("exist on cache\n");
+
+
+                printf("chera %d",kfw_controls.datas[kfw_controls.AUX_functions_returns].consistency);
+                if(kfw_controls.datas[kfw_controls.AUX_functions_returns].consistency==1){
+                    /* We should check whether data_type specified by user_command matches
+                     * data_type of the data we have found.
+                     *
+                     * Users Cannot change the type whenever they enter data definition mode.
+                    */
+                    if(kfw_controls.datas[kfw_controls.AUX_functions_returns].type != kfw_controls.AUX_data_type){
+                        printe("Cannot change type for data %s\nTo change the type first delete the type and recreate it"); //TODO‌
+                        continue;
+                    }
+                    else
+                        kfw_controls.AUX_data_st_ptr = &(kfw_controls.datas[kfw_controls.AUX_functions_returns]);
                 }
-                else
-                    kfw_controls.AUX_data_st_ptr = &(kfw_controls.datas[kfw_controls.res]);
+                else{
+                    printf("consistency was failed / send request to kernel\n");
+                    kfw_controls.AUX_data_st_ptr=&kfw_controls.datas[kfw_controls.current_kfw_datas];
+
+                    kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
+
+                    kfw_controls.AUX_data_st_ptr->consistency=1;
+
+                    if(kfw_controls.AUX_functions_returns==0)
+                        kfw_controls.AUX_data_st_ptr->current_rules=0;
+
+                    // set datas array consistancy to 0 because the data probable
+                    // changed //TODO
+                    consistencyFlags.datas=0;
+
+                }
+
+
             }
 
 
@@ -110,66 +526,32 @@ int main() {
                      *         kfw_controls.AUX_rule_type
                      *         kfw_controls.AUX_rule_value
                     */
-                    bzero(kfw_controls.AUX_rule_type,strlen(kfw_controls.AUX_rule_type));
-                    split_rule_definition_command(kfw_controls.user_command, kfw_controls.AUX_rule_type, kfw_controls.AUX_rule_value, 0, 1);
+                    bzero(kfw_controls.AUX_rule_type, strlen(kfw_controls.AUX_rule_type));
+                    split_rule_definition_command(kfw_controls.user_command, kfw_controls.AUX_rule_type,
+                                                  kfw_controls.AUX_rule_value, 0, 1);
+
+                    printf("%s\n", kfw_controls.AUX_data_name);
+                    // send request for the rule
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b00000001, kfw_controls.AUX_rule_type,
+                                   kfw_controls.AUX_rule_value, kfw_controls.AUX_data_name,
+                                   &kfw_controls.datas[kfw_controls.AUX_functions_returns], NULL);
+
+                    printf("rule sent\n");
 
 
-                    kfw_controls.res=get_index_of_rule_in_rules(kfw_controls.AUX_data_st_ptr,kfw_controls.AUX_rule_type);
-
-
-                    if(kfw_controls.res==-1){
-                        kfw_controls.AUX_rule_st_ptr = &(kfw_controls.AUX_data_st_ptr->rules[kfw_controls.AUX_data_st_ptr->current_rules]);
-                        //zero the data_with_action
-                        bzero(kfw_controls.AUX_rule_st_ptr,sizeof(rule_t));
-
-                        strcpy(kfw_controls.AUX_rule_st_ptr->type,kfw_controls.AUX_rule_type);
-                        strcpy(kfw_controls.AUX_rule_st_ptr->value,kfw_controls.AUX_rule_value);
-
-                        //update total number of rules in data
-                        kfw_controls.AUX_data_st_ptr->current_rules++;
-
-
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_data_st_ptr!=NULL) {
+                        kfw_controls.AUX_data_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
                     }
-                    else{
 
-                        kfw_controls.AUX_rule_st_ptr = &(kfw_controls.AUX_data_st_ptr->rules[kfw_controls.res]);
-                        bzero(kfw_controls.AUX_rule_st_ptr->value,strlen(kfw_controls.AUX_rule_st_ptr->value));
-                        strcpy((kfw_controls.AUX_rule_st_ptr->value),kfw_controls.AUX_rule_value);
-
-                    }
+                    // set datas array consistancy to 0
+                    consistencyFlags.datas=0;
 
 
                 }
-
                 // rule deletion
                 else if (regexec(&kfw_regex.regex_rule_deletion, kfw_controls.user_command, 0, NULL, 0) == 0) {
-                    /*
-                     * Deletion policy:
-                     *  First we find the type and value of the rule based on splitting
-                     *  rule command.Then we search these values in the rules array of the
-                     *  (founded/created) data.After finding the index of that rule , we start
-                     *  shifting the right side rules to the left.For efficiency purposes the logic is
-                     *  as below‌:
-                     *          if ( the rule was the last rule in the array){
-                     *
-                     *              // checking this is because an array with one element
-                     *              // can serves its first element as its last element , so
-                     *              // we have to check if it has only 1 element in itself
-                     *              // decrementing is not necessary and the reason is
-                     *              // whenever we want to add new element to any array in this program
-                     *              // we use bzero() to clear its previous data , so we are not worried about
-                     *              // previous data of first element.
-                     *
-                     *              if(decrementing of total number does not lead to -1)
-                     *                  just decrement one from total number of rules in the array
-                     *          }
-                     *          else{
-                     *             go to the next rule;
-                     *             start copying each rules bytes to the previous index
-                     *         }
-
-                     * */
-
 
                     onebyte_p_t rule_type[MAX_LEN_RULE_TYPE];
                     onebyte_p_t rule_value[MAX_LEN_RULE_VALUE];
@@ -178,58 +560,97 @@ int main() {
 
                     split_rule_definition_command(kfw_controls.user_command, rule_type, rule_value, 1, 2);
 
-                    // Start searching for the rule based on Type  and Value
-                    for (int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++)
-                        if (strcmp(kfw_controls.AUX_data_st_ptr->rules[i].type, rule_type) == 0 &&
-                            strcmp(kfw_controls.AUX_data_st_ptr->rules[i].value, rule_value) == 0) {
-                            // here we have found the rule
 
-                            // check if the rule is the last one
-                            if (i == kfw_controls.AUX_data_st_ptr->current_rules - 1) {
-                                if(kfw_controls.AUX_data_st_ptr->current_rules-1!=-1)
-                                    kfw_controls.AUX_data_st_ptr->current_rules--;
-                            }
-                            else {
-                                // i++ : go to next rule
-                                i++;
-                                // start copying each rule to the previous index ( shifting to the left)
-                                while (i <= kfw_controls.AUX_data_st_ptr->current_rules - 1) {
-                                    memcpy(&kfw_controls.AUX_data_st_ptr->rules[i - 1], &kfw_controls.AUX_data_st_ptr->rules[i], sizeof(rule_t));
-                                    i++;
-                                }
-                            }
-                            break;
-                        }
-                    // update total number of rules
-                    kfw_controls.AUX_data_st_ptr->current_rules--;
-                    printf("rule removed \n");
-                }
+                    // send request to kernel
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b10000001, kfw_controls.AUX_rule_type,
+                                   kfw_controls.AUX_rule_value, kfw_controls.AUX_data_name,
+                                   &kfw_controls.datas[kfw_controls.AUX_functions_returns], NULL);
 
-                // quick clear
-                else if (regexec(&kfw_regex.regex_quick_clear, kfw_controls.user_command, 0, NULL, 0) == 0) {
-                    // For quick clear , we just make total number of rules to zero.
-                    // The first implementation was to make all the bytes of rules array zero ,
-                    // but for efficiency purposes it was ignored.
-                    kfw_controls.AUX_data_st_ptr->current_rules = 0;
-
-//                    bzero(kfw_controls.AUX_data_st_ptr->rules, (kfw_controls.AUX_data_st_ptr->current_rules) * sizeof(rule_t));
-                }
-
-                // quick  show
-                else if (regexec(&kfw_regex.regex_quick_show, kfw_controls.user_command, 0, NULL, 0) == 0) {
-                    for (int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++) {
-                        printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type, kfw_controls.AUX_data_st_ptr->rules[i].value);
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_data_st_ptr!=NULL) {
+                        kfw_controls.AUX_data_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
                     }
+                    // set datas array consistancy to 0
+                    consistencyFlags.datas=0;
+
                 }
 
-                // issuing back
+                    // quick clear
+                else if (regexec(&kfw_regex.regex_quick_clear, kfw_controls.user_command, 0, NULL, 0) == 0) {
+                    // send request to kernel // TODO‌ arg1 arg2 not necessary
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b01111110, "NULL","NULL", "NULL",NULL,NULL);
+
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_data_st_ptr!=NULL) {
+                        kfw_controls.AUX_data_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
+                    }
+                    // set datas array consistancy to 0
+                    consistencyFlags.datas=0;
+
+                }
+
+                    // quick  show
+                else if (regexec(&kfw_regex.regex_quick_show, kfw_controls.user_command, 0, NULL, 0) == 0) {
+
+                    printf("quick show issued\n");
+
+                    if(kfw_controls.AUX_data_st_ptr!=NULL){
+                        printf("mokhaledf\n");
+                        if(kfw_controls.AUX_data_st_ptr->consistency==1){
+                        printf("reading from cache consitent data%d\n",kfw_controls.AUX_data_st_ptr->current_rules);
+                        for (int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++) {
+                            printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type, kfw_controls.AUX_data_st_ptr->rules[i].value);
+                            }
+                        }
+                        else{
+                        // send request to kernel
+                        kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
+
+                        kfw_controls.AUX_data_st_ptr->consistency=1;
+
+                            // update cache if does not consistent with kernel
+                        if(kfw_controls.AUX_functions_returns==0)
+                            kfw_controls.AUX_data_st_ptr->current_rules=0;
+                        else
+                            for(int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++) {
+                                printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type, kfw_controls.AUX_data_st_ptr->rules[i].value);
+                            }
+                    }
+
+                }else{
+                        printf("pointer is null\n");
+                        // send request to kernel
+                        kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
+                        printf("%d\n",kfw_controls.AUX_functions_returns);
+
+
+
+                        // update cache if exist and if does not consistent with kernel
+                        if(kfw_controls.AUX_data_st_ptr!=NULL){
+                            kfw_controls.AUX_data_st_ptr->consistency=1;
+
+
+                            if(kfw_controls.AUX_functions_returns==0)
+                                kfw_controls.AUX_data_st_ptr->current_rules=0;
+                            else
+                                for(int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++) {
+                                    printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type, kfw_controls.AUX_data_st_ptr->rules[i].value);
+                                }
+                        }
+                }
+
+                }
+
+                    // issuing back
                 else if (regexec(&kfw_regex.regex_back_to_previous_mode, kfw_controls.user_command, 0, NULL, 0) == 0) {
-                        break;
+                    break;
                 }
-                }
+            }
         }
 
-        // policy definition
+            // policy definition
         else if(regexec(&kfw_regex.regex_policy_definition, kfw_controls.user_command, 0, NULL, 0) ==0){
 
             // clear kfw_controls.AUX_policy_name for new name
@@ -237,25 +658,58 @@ int main() {
             split_policy_definition_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,1,0);
 
 
-            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
+            kfw_controls.AUX_functions_returns=get_index_of_policy_in_policies(&kfw_controls, kfw_controls.AUX_policy_name);
 
 
             // A policy with name AUX_policy_name does not exist so we allocate new one in
             // kfw_controls.policies
-            if(kfw_controls.res==-1){
-                kfw_controls.AUX_policy_st_ptr=&(kfw_controls.policies[kfw_controls.current_kfw_policies]);
+            if(kfw_controls.AUX_functions_returns == -1){
 
-                // zero all that structure ( initialize )
-                bzero(kfw_controls.AUX_policy_st_ptr, sizeof(policy_t));
+                printf("policy not exist on cache\n");
 
-                strcpy(kfw_controls.AUX_policy_st_ptr->name, kfw_controls.AUX_policy_name);
+                printf("send request\n");
 
-                // update total number of policies in kfw policies
-                kfw_controls.current_kfw_policies++;
+                kfw_controls.AUX_policy_st_ptr=&kfw_controls.policies[kfw_controls.current_kfw_policies];
+
+                kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_policy_name,NULL,NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+
+
+                printf("policy bytes:%d\n",kfw_controls.AUX_functions_returns);
+
+                // if we had bytes written to that address
+                if(kfw_controls.AUX_functions_returns !=0)
+                    kfw_controls.current_kfw_policies++;
+                else
+                    kfw_controls.AUX_policy_st_ptr=NULL;
+
+                // set policies array consistancy to 0 because the policy probabaly
+                // created/entered with no data
+                consistencyFlags.policies=0;
+
             }
             else {
-                printf("found one\n");
-                kfw_controls.AUX_policy_st_ptr = &(kfw_controls.policies[kfw_controls.res]);
+                printf("policy exist on cache\n");
+
+                if(kfw_controls.policies[kfw_controls.AUX_functions_returns].consistency==1){
+
+                        kfw_controls.AUX_policy_st_ptr = &(kfw_controls.policies[kfw_controls.AUX_functions_returns]);
+                }
+                else{
+                    printf("consistency was failed / send request to kernel\n");
+
+                    kfw_controls.AUX_policy_st_ptr=&kfw_controls.policies[kfw_controls.current_kfw_policies];
+
+                    send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_policy_name,NULL,NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+
+                    kfw_controls.AUX_policy_st_ptr->consistency=1;
+
+                    // set policies array consistancy to 0 because the policy probabaly
+                    // changed
+                    consistencyFlags.policies=0;
+
+
+                }
+
             }
 
 
@@ -269,83 +723,127 @@ int main() {
                 // data_action definition( with overwrite ability )
                 if (regexec(&kfw_regex.regex_data_action_definition, kfw_controls.user_command, 0, NULL, 0) == 0) {
                     split_data_with_action_command(kfw_controls.user_command,kfw_controls.AUX_data_name,kfw_controls.AUX_action_name,0,1);
-                    kfw_controls.res=get_index_of_data_in_datas(&kfw_controls,kfw_controls.AUX_data_name);
-                    if(kfw_controls.res==-1)
-                        printe("This data does not exist"); //TODO‌ %s
 
-                    else {
 
-                        kfw_controls.res=get_index_of_datawithaction_in_policies(kfw_controls.AUX_policy_st_ptr,kfw_controls.AUX_data_name);
 
-                        if(kfw_controls.res==-1){
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b00000011, kfw_controls.AUX_data_name,
+                                   kfw_controls.AUX_action_name, "NULL",
+                                   NULL,&kfw_controls.policies[kfw_controls.AUX_functions_returns]);
 
-                            kfw_controls.AUX_data_action_st_ptr = &(kfw_controls.AUX_policy_st_ptr->data_with_actions[kfw_controls.AUX_policy_st_ptr->current_data_actions]);
 
-                            //zero the data_with_action
-                            bzero(kfw_controls.AUX_data_action_st_ptr, sizeof(data_with_action_t));
 
-                            strcpy(kfw_controls.AUX_data_action_st_ptr->data_name,kfw_controls.AUX_data_name);
-                            strcpy(kfw_controls.AUX_data_action_st_ptr->action,kfw_controls.AUX_action_name);
+                    printf("data with action sent\n");
 
-                            // update total number of data_with_action entities in the policy
-                            kfw_controls.AUX_policy_st_ptr->current_data_actions++;
-
-                        }
-                        else {
-                            kfw_controls.AUX_data_action_st_ptr = &(kfw_controls.AUX_policy_st_ptr->data_with_actions[kfw_controls.res]);
-                            bzero(&(kfw_controls.AUX_data_action_st_ptr->action), MAX_LEN_ACTION_NAME);
-                            strcpy(kfw_controls.AUX_data_action_st_ptr->action,kfw_controls.AUX_action_name);
-                        }
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_policy_st_ptr!=NULL) {
+                        kfw_controls.AUX_policy_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
                     }
+
+                    // set policies array consistancy to 0 because the policy probabaly
+                    // changed
+                    consistencyFlags.policies=0;
+
                 }
 
                 else if (regexec(&kfw_regex.regex_back_to_previous_mode, kfw_controls.user_command, 0, NULL, 0) ==0) {
                     break;
                 }
 
-                // data_action deletion
+                    // data_action deletion
                 else if (regexec(&kfw_regex.regex_data_action_deletion, kfw_controls.user_command, 0, NULL, 0) ==0) {
+
                     split_data_with_action_command(kfw_controls.user_command,kfw_controls.AUX_data_name,kfw_controls.AUX_action_name,1,2);
-                    kfw_controls.res=get_index_of_data_in_datas(&kfw_controls,kfw_controls.AUX_data_name);
 
-                    // delete policy is same as rule deletion in data structure
-                    if(kfw_controls.res!=-1){
-                        if(kfw_controls.res==kfw_controls.AUX_policy_st_ptr->current_data_actions-1) {
-                            if(kfw_controls.AUX_policy_st_ptr->current_data_actions-1!=-1)
-                                kfw_controls.AUX_policy_st_ptr->current_data_actions--;
-                        }
-                        else{
-                            kfw_controls.res++;
-                            while(kfw_controls.res<=kfw_controls.AUX_policy_st_ptr->current_data_actions-1){
-                                memcpy(&kfw_controls.AUX_policy_st_ptr->data_with_actions[kfw_controls.res-1],&kfw_controls.AUX_policy_st_ptr->data_with_actions[kfw_controls.res],sizeof(data_with_action_t));
-                                kfw_controls.res++;
-                            }
 
-                            //update total number of data_actions
-                            kfw_controls.AUX_policy_st_ptr->current_data_actions--;
-                        }
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b10000011, kfw_controls.AUX_data_name,
+                                   kfw_controls.AUX_action_name, "NULL",
+                                   NULL,&kfw_controls.policies[kfw_controls.AUX_functions_returns]);
+
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_policy_st_ptr!=NULL) {
+                        kfw_controls.AUX_policy_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
                     }
+                    // set policies array consistancy to 0 because the policy probabaly
+                    // changed
+                    consistencyFlags.policies=0;
+
+
                 }
 
                 // quick show
                 else if (regexec(&kfw_regex.regex_quick_show, kfw_controls.user_command, 0, NULL, 0) ==0) {
-                    for(int i=0;i<kfw_controls.AUX_policy_st_ptr->current_data_actions;i++){
-                        printf("%s %s\n",kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name,kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
-                    }
-                }
-                // quick clear
-                else if (regexec(&kfw_regex.regex_quick_clear, kfw_controls.user_command, 0, NULL, 0) ==0) {
-                    // For quick clear , we just make total number of data_with_actions to zero.
-                    // The first implementation was to make all the bytes of data_with_actions array zero ,
-                    // but for efficiency purposes it was ignored.
-                    kfw_controls.AUX_policy_st_ptr->current_data_actions = 0;
-                    printf("quick clear issued \n");
-                    // bzero for clear
-                }
 
-//                // clear user_command for next commands
-//                // one copy of user_command does exist in user_command_ns
-//                bzero(kfw_controls.user_command, strlen(kfw_controls.user_command));
+                    printf("quick show issued for policy\n");
+
+                    if(kfw_controls.AUX_policy_st_ptr!=NULL){
+                        printf("mokhaledf .. %d\n",kfw_controls.AUX_policy_st_ptr->consistency);
+                        if(kfw_controls.AUX_policy_st_ptr->consistency==1){
+                            printf("reading from cache consitent policy%d\n",kfw_controls.AUX_policy_st_ptr->current_data_actions);
+                            for(int i = 0; i < kfw_controls.AUX_policy_st_ptr->current_data_actions; i++) {
+                                printf("%s %s\n", kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name, kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
+                            }
+                        }
+                        else{
+                            printf("cache is not consistent , send reques\n");
+                            // send request to kernel
+                            kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+
+                            kfw_controls.AUX_policy_st_ptr->consistency=1;
+
+                            // update cache if does not consistent with kernel
+                            if(kfw_controls.AUX_functions_returns==0)
+                                kfw_controls.AUX_policy_st_ptr->current_data_actions=0;
+                            else
+                                for(int i = 0; i < kfw_controls.AUX_policy_st_ptr->current_data_actions; i++) {
+                                    printf("%s %s\n", kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name, kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
+                                }
+                        }
+
+                    }else{
+                        printf("pointer is null\n");
+                        // send request to kernel
+                        kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+                        printf("%d\n",kfw_controls.AUX_functions_returns);
+                        // update cache if exist and if does not consistent with kernel
+                        if(kfw_controls.AUX_policy_st_ptr!=NULL){
+
+                            kfw_controls.AUX_policy_st_ptr->consistency=1;
+
+                            if(kfw_controls.AUX_functions_returns==0)
+                                kfw_controls.AUX_policy_st_ptr-> current_data_actions=0;
+                            else
+                                for(int i = 0; i < kfw_controls.AUX_policy_st_ptr->current_data_actions; i++) {
+                                    printf("%s %s\n", kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name, kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
+                                }
+                        }
+                    }
+
+                }
+                    // quick clear
+                else if (regexec(&kfw_regex.regex_quick_clear, kfw_controls.user_command, 0, NULL, 0) ==0) {
+                    // send request to kernel // TODO‌ arg1 arg2 not necessary
+                    send_to_kernel(NULL,&kfw_controls, &kfwp_controls, 0b01111111, "NULL","NULL", "NULL",NULL,NULL);
+
+                    //set consistency flag to 0
+                    if(kfw_controls.AUX_policy_st_ptr!=NULL) {
+                        kfw_controls.AUX_policy_st_ptr->consistency = 0;
+                        printf("inconsistent\n");
+                    }
+                    // set policies array consistancy to 0 because the policy probabaly
+                    // changed
+                    consistencyFlags.policies=0;
+
+
+//
+//                    // For quick clear , we just make total number of data_with_actions to zero.
+//                    // The first implementation was to make all the bytes of data_with_actions array zero ,
+//                    // but for efficiency purposes it was ignored.
+//                    kfw_controls.AUX_policy_st_ptr->current_data_actions = 0;
+//                    printf("quick clear issued \n");
+//                    // bzero for clear
+                }
 
             }
 
@@ -362,61 +860,69 @@ int main() {
             // when remove data check policy dependency
             split_data_definition_command(kfw_controls.user_command, kfw_controls.AUX_data_name, &kfw_controls.AUX_data_type,2,2);
 
-            kfw_controls.res=get_index_of_data_in_datas(&kfw_controls,kfw_controls.AUX_data_name);
-
-            if(kfw_controls.res!=-1){
-                //TODO check policy_dependency
+            // send deletion request to kernel
+            kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b10000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,NULL,NULL);
 
 
+            // when we delete the data from cache
+            // we do not change datas array consistancy flag
+            // thats because we don't see any request be generated by kfw
 
-                // Delete the data from datas array.
-                // Deletion policy is same as before.
-                if(kfw_controls.res==kfw_controls.current_kfw_datas-1) {
-                    if (kfw_controls.current_kfw_datas - 1 != -1)
-                        kfw_controls.current_kfw_datas--;
-                }
-                else{
-                    kfw_controls.res++;
-                    while(kfw_controls.res<=kfw_controls.current_kfw_datas-1){
-                        memcpy(&kfw_controls.datas[kfw_controls.res-1],&kfw_controls.datas[kfw_controls.res],sizeof(data_t));
-                        kfw_controls.res++;
+            // successful deletion of data in kernel
+            if(kfw_controls.AUX_functions_returns==0){
+                kfw_controls.AUX_functions_returns=get_index_of_data_in_datas(&kfw_controls, kfw_controls.AUX_data_name);
+
+                if(kfw_controls.AUX_functions_returns != -1){
+                    // Delte the data from the cache
+                    // Delete the data from datas array.
+                    // Deletion policy is same as before.
+                    if(kfw_controls.AUX_functions_returns == kfw_controls.current_kfw_datas - 1) {
+                        if (kfw_controls.current_kfw_datas - 1 != -1)
+                            kfw_controls.current_kfw_datas--;
                     }
-                    //update total number of datas
-                    kfw_controls.current_kfw_datas--;
-                    printf("data deletion issued");
-
+                    else{
+                        kfw_controls.AUX_functions_returns++;
+                        while(kfw_controls.AUX_functions_returns <= kfw_controls.current_kfw_datas - 1){
+                            memcpy(&kfw_controls.datas[kfw_controls.AUX_functions_returns - 1], &kfw_controls.datas[kfw_controls.AUX_functions_returns], sizeof(data_t));
+                            kfw_controls.AUX_functions_returns++;
+                        }
+                        //update total number of datas
+                        kfw_controls.current_kfw_datas--;
+                        printf("data deletion issued");
+                    }
                 }
-
             }
-
-
-
-
-
-
         }
+
 
         // policy deletion
         else if(regexec(&kfw_regex.regex_policy_deletion, kfw_controls.user_command, 0, NULL, 0) ==0) {
+
+            //TODO check dependency of ingress / egress
             // clear kfw_controls.AUX_policy_name for new name
             bzero(kfw_controls.AUX_policy_name,strlen(kfw_controls.AUX_policy_name));
             split_policy_definition_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,2,2);
 
-            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
+
+            kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b10000010,kfw_controls.AUX_policy_name,NULL,NULL,NULL,NULL);
+
+
+
+            kfw_controls.AUX_functions_returns=get_index_of_policy_in_policies(&kfw_controls, kfw_controls.AUX_policy_name);
 
             // deletion policy is same as before
-            if(kfw_controls.res!=-1){
-                if(kfw_controls.res==kfw_controls.current_kfw_policies-1) {
+            if(kfw_controls.AUX_functions_returns != -1){
+                if(kfw_controls.AUX_functions_returns == kfw_controls.current_kfw_policies - 1) {
                     if(kfw_controls.current_kfw_policies-1!=-1)
                         kfw_controls.current_kfw_policies--;
 
 
                 }
                 else{
-                    kfw_controls.res++;
-                    while(kfw_controls.res<=kfw_controls.current_kfw_policies-1){
-                        memcpy(&kfw_controls.policies[kfw_controls.res-1],&kfw_controls.policies[kfw_controls.res],sizeof(policy_t));
-                        kfw_controls.res++;
+                    kfw_controls.AUX_functions_returns++;
+                    while(kfw_controls.AUX_functions_returns <= kfw_controls.current_kfw_policies - 1){
+                        memcpy(&kfw_controls.policies[kfw_controls.AUX_functions_returns - 1], &kfw_controls.policies[kfw_controls.AUX_functions_returns], sizeof(policy_t));
+                        kfw_controls.AUX_functions_returns++;
                     }
                     //update total number of policies
                     kfw_controls.current_kfw_policies--;
@@ -430,116 +936,197 @@ int main() {
 
         }
 
-        // show data
+
+        // show data DATA_NAME
         else if (regexec(&kfw_regex.regex_show_data_command, kfw_controls.user_command, 0, NULL, 0) ==0){
+            //TODO‌ IMPORTATN
+            // show data DATA_NAME (all/any)>not important
+
             split_data_definition_command(kfw_controls.user_command, kfw_controls.AUX_data_name, &kfw_controls.AUX_data_type,2,4);
 
-            kfw_controls.res=get_index_of_data_in_datas(&kfw_controls,kfw_controls.AUX_data_name);
+            kfw_controls.AUX_functions_returns=get_index_of_data_in_datas(&kfw_controls, kfw_controls.AUX_data_name);
 
-            if(kfw_controls.res!=-1){
-                // store the address of found data structure in kfw_controls.AUX_data_st_ptr
-                kfw_controls.AUX_data_st_ptr=&(kfw_controls.datas[kfw_controls.res]);
+            if(kfw_controls.AUX_functions_returns == -1) {
+                printf("new\n");
+                kfw_controls.AUX_data_st_ptr=&kfw_controls.datas[kfw_controls.current_kfw_datas];
+
+
+                // by setting type to 2 , we tell kernel not to check the type
+                // and send us data
+                kfw_controls.AUX_data_type=2;
+                kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
+
+
+                printf("bytes:%d\n",kfw_controls.AUX_functions_returns);
+                // if we had bytes written to that address
+                if(kfw_controls.AUX_functions_returns !=0)
+                    kfw_controls.current_kfw_datas++;
+                else
+                    kfw_controls.AUX_data_st_ptr=NULL;
+
+                printf("data#:%d\n",kfw_controls.current_kfw_datas);
+
+            }else{
+                //check consistency
+                printf("show data XXX exist on cache\n");
+
+                if(kfw_controls.datas[kfw_controls.AUX_functions_returns].consistency==1){
+
+                        printf("show data XXX consists\n");
+                        kfw_controls.AUX_data_st_ptr = &(kfw_controls.datas[kfw_controls.AUX_functions_returns]);
+                }
+                else{
+                    printf("show data XXX consistency was failed / send request to kernel\n");
+                    kfw_controls.AUX_data_st_ptr=&kfw_controls.datas[kfw_controls.current_kfw_datas];
+
+                    // by setting type to 2 , we tell kernel not to check the type
+                    // and send us data
+                    kfw_controls.AUX_data_type=2;
+                    kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000000,kfw_controls.AUX_data_name,&kfw_controls.AUX_data_type,NULL,kfw_controls.AUX_data_st_ptr,NULL);
+
+                    kfw_controls.AUX_data_st_ptr->consistency=1;
+                    if(kfw_controls.AUX_data_st_ptr!=NULL){ //TODO we can omit this if
+                        if(kfw_controls.AUX_functions_returns==0)
+                            kfw_controls.AUX_data_st_ptr->current_rules=0;
+                    }
+
+                }
+
+
+            }
+            if(kfw_controls.AUX_data_st_ptr!=NULL) {
 
                 for (int i = 0; i < kfw_controls.AUX_data_st_ptr->current_rules; i++) {
-                    printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type, kfw_controls.AUX_data_st_ptr->rules[i].value);
+                    printf("%s %s\n", kfw_controls.AUX_data_st_ptr->rules[i].type,
+                           kfw_controls.AUX_data_st_ptr->rules[i].value);
                 }
 
                 printf("show data issued\n");
-
             }
 
         }
 
-        // show policy
+        // show policy POLICY_NAME
         else if (regexec(&kfw_regex.regex_show_policy_command, kfw_controls.user_command, 0, NULL, 0) ==0){
+
+
             split_policy_definition_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,2,4);
 
-            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
+            kfw_controls.AUX_functions_returns=get_index_of_policy_in_policies(&kfw_controls, kfw_controls.AUX_policy_name);
 
-            if(kfw_controls.res!=-1){
-                kfw_controls.AUX_policy_st_ptr=&(kfw_controls.policies[kfw_controls.res]);
-                for(int i=0;i<kfw_controls.AUX_policy_st_ptr->current_data_actions;i++){
-                    printf("%s %s\n",kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name,kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
+
+
+            if(kfw_controls.AUX_functions_returns == -1) {
+
+                printf("policy not exist on cache\n");
+
+                printf("send request\n");
+
+                kfw_controls.AUX_policy_st_ptr=&kfw_controls.policies[kfw_controls.current_kfw_policies];
+
+                // setting arg2 for kernel means we are issuing
+                // show policy POLICY_NAME command
+                kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_policy_name,"show",NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+
+
+                printf("policy bytes:%d\n",kfw_controls.AUX_functions_returns);
+
+                // if we had bytes written to that address
+                if(kfw_controls.AUX_functions_returns !=0)
+                    kfw_controls.current_kfw_policies++;
+                else
+                    kfw_controls.AUX_policy_st_ptr=NULL;
+
+            }else{
+                //check consistency
+                printf("show policy XXX exist on cache\n");
+
+                if(kfw_controls.policies[kfw_controls.AUX_functions_returns].consistency==1){
+
+                    printf("show policy XXX consists\n");
+                    kfw_controls.AUX_policy_st_ptr = &(kfw_controls.policies[kfw_controls.AUX_functions_returns]);
                 }
+                else{
+                    printf("show policy XXX consistency was failed / send request to kernel\n");
+
+                    kfw_controls.AUX_policy_st_ptr=&kfw_controls.policies[kfw_controls.current_kfw_policies];
+
+                    send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000010,kfw_controls.AUX_policy_name,NULL,NULL,NULL,kfw_controls.AUX_policy_st_ptr);
+
+
+                    kfw_controls.AUX_policy_st_ptr->consistency=1;
+                    if(kfw_controls.AUX_policy_st_ptr!=NULL){ //TODO we can omit this if
+                        if(kfw_controls.AUX_functions_returns==0)
+                            kfw_controls.AUX_policy_st_ptr->current_data_actions=0;
+                    }
+
+                }
+
+
+            }
+            if(kfw_controls.AUX_policy_st_ptr!=NULL) {
+
+                for (int i = 0; i < kfw_controls.AUX_policy_st_ptr->current_data_actions; i++) {
+                    printf("%s %s\n", kfw_controls.AUX_policy_st_ptr->data_with_actions[i].data_name,
+                           kfw_controls.AUX_policy_st_ptr->data_with_actions[i].action);
+                }
+
                 printf("show policy issued\n");
             }
 
+
         }
+
+
+
 
         // service policy definition
         else if (regexec(&kfw_regex.regex_service_policy_definition, kfw_controls.user_command, 0, NULL, 0) ==0) {
 
-            printf("service policy\n");
+            printf("service policy definition\n");
             split_service_policy_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,
-                    kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,1,2,3);
+                                         kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,1,2,3);
 
-            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
-
-
-            if(kfw_controls.res==-1)
-                printe("Policy %s does not exist"); //TODO
-            else{
-
-                if(strncmp(kfw_controls.AUX_policy_direction,"in",2)==0){
-                    kfw_controls.res=get_index_of_policyint_in_ingress(&ingress_policies,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
-                    if(kfw_controls.res==-1){
-
-                        bzero(&ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies],sizeof(policy_with_int_t));
-                        strcpy(ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies].policy_name,kfw_controls.AUX_policy_name);
-                        strcpy(ingress_policies.policyWithInterfaces[ingress_policies.current_ingress_policies].interface_name,kfw_controls.AUX_interface_name);
-                        ingress_policies.current_ingress_policies++;
-
-
-                        printf("created new in ingress\n");
-                    } else
-                        printf("exist in array\n");
-                }
-                else if(strncmp(kfw_controls.AUX_policy_direction,"out",3)==0){
-                    kfw_controls.res=get_index_of_policyint_in_egress(&egress_policies,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
-                    if(kfw_controls.res==-1){
-
-                        bzero(&egress_policies.policyWithInterfaces[egress_policies.current_egress_policies],sizeof(policy_with_int_t));
-                        strcpy(egress_policies.policyWithInterfaces[egress_policies.current_egress_policies].policy_name,kfw_controls.AUX_policy_name);
-                        strcpy(egress_policies.policyWithInterfaces[egress_policies.current_egress_policies].interface_name,kfw_controls.AUX_interface_name);
-                        egress_policies.current_egress_policies++;
-
-                        printf("created new in egress\n");
-                    } else
-                        printf("exist in array\n");
-                }
-
-                }
+            kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b00000100,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,NULL,NULL);
 
         }
 
         // service policy deletion
         else if (regexec(&kfw_regex.regex_service_policy_deletion, kfw_controls.user_command, 0, NULL, 0) ==0) {
 
+            printf("service policy deletion\n");
+
+
+
             split_service_policy_command(kfw_controls.user_command,kfw_controls.AUX_policy_name,
                                          kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,2,3,4);
 
-            kfw_controls.res=get_index_of_policy_in_policies(&kfw_controls,kfw_controls.AUX_policy_name);
 
-            if(kfw_controls.res==-1)
+            kfw_controls.AUX_functions_returns=send_to_kernel(NULL,&kfw_controls,&kfwp_controls,0b10000100,kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name,kfw_controls.AUX_policy_direction,NULL,NULL);
+
+
+            kfw_controls.AUX_functions_returns=get_index_of_policy_in_policies(&kfw_controls, kfw_controls.AUX_policy_name);
+
+            if(kfw_controls.AUX_functions_returns == -1)
                 printe("Policy %s does not exist\n"); //TODO
             else{
                 // TODO‌ make this code better
                 if(strcmp(kfw_controls.AUX_policy_direction,"out")==0) {
 
-                    kfw_controls.res = get_index_of_policyint_in_egress(&egress_policies, kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+                    kfw_controls.AUX_functions_returns = get_index_of_policyint_in_egress(&egress_policies, kfw_controls.AUX_policy_name, kfw_controls.AUX_interface_name);
 
-                    if(kfw_controls.res!=-1){
+                    if(kfw_controls.AUX_functions_returns != -1){
 
                         // Deletion policy is like before
-                        if(kfw_controls.res==egress_policies.current_egress_policies-1){
+                        if(kfw_controls.AUX_functions_returns == egress_policies.current_egress_policies - 1){
                             if(egress_policies.current_egress_policies-1!=-1)
                                 egress_policies.current_egress_policies--;
                         }
                         else{
-                            kfw_controls.res++;
-                            while(kfw_controls.res<=egress_policies.current_egress_policies-1){
-                                memcpy(&egress_policies.policyWithInterfaces[kfw_controls.res-1],&egress_policies.policyWithInterfaces[kfw_controls.res],sizeof(policy_with_int_t));
-                                kfw_controls.res++;
+                            kfw_controls.AUX_functions_returns++;
+                            while(kfw_controls.AUX_functions_returns <= egress_policies.current_egress_policies - 1){
+                                memcpy(&egress_policies.policyWithInterfaces[kfw_controls.AUX_functions_returns - 1], &egress_policies.policyWithInterfaces[kfw_controls.AUX_functions_returns], sizeof(policy_with_int_t));
+                                kfw_controls.AUX_functions_returns++;
                             }
                             // update total number of policy_with_int
                             egress_policies.current_egress_policies--;
@@ -551,20 +1138,20 @@ int main() {
                 }
                 else{
 
-                    kfw_controls.res = get_index_of_policyint_in_ingress(&ingress_policies, kfw_controls.AUX_policy_name,kfw_controls.AUX_interface_name);
+                    kfw_controls.AUX_functions_returns = get_index_of_policyint_in_ingress(&ingress_policies, kfw_controls.AUX_policy_name, kfw_controls.AUX_interface_name);
 
 
-                    if(kfw_controls.res!=-1){
+                    if(kfw_controls.AUX_functions_returns != -1){
                         // Deletion policy is like before
-                        if(kfw_controls.res==ingress_policies.current_ingress_policies-1){
+                        if(kfw_controls.AUX_functions_returns == ingress_policies.current_ingress_policies - 1){
                             if(ingress_policies.current_ingress_policies-1!=-1)
                                 ingress_policies.current_ingress_policies--;
                         }
                         else{
-                            kfw_controls.res++;
-                            while(kfw_controls.res<=ingress_policies.current_ingress_policies-1){
-                                memcpy(&ingress_policies.policyWithInterfaces[kfw_controls.res-1],&ingress_policies.policyWithInterfaces[kfw_controls.res],sizeof(policy_with_int_t));
-                                kfw_controls.res++;
+                            kfw_controls.AUX_functions_returns++;
+                            while(kfw_controls.AUX_functions_returns <= ingress_policies.current_ingress_policies - 1){
+                                memcpy(&ingress_policies.policyWithInterfaces[kfw_controls.AUX_functions_returns - 1], &ingress_policies.policyWithInterfaces[kfw_controls.AUX_functions_returns], sizeof(policy_with_int_t));
+                                kfw_controls.AUX_functions_returns++;
                             }
                             // update total number of policy_with_int
                             ingress_policies.current_ingress_policies--;
@@ -576,30 +1163,54 @@ int main() {
             }
         }
 
+
+
+
         // show polices
         else if (regexec(&kfw_regex.regex_show_polices, kfw_controls.user_command, 0, NULL, 0) ==0) {
-                printf("policies\n");
-                printf("-----------------\n");
-                for(int i=0;i<kfw_controls.current_kfw_policies;i++)
-                    printf("policy %s\n",kfw_controls.policies[i].name);
+
+            //first check policies cache consistency
+
+            // if policies was not consitent
+            if(consistencyFlags.policies==0){
+                // first clear datas cache
+                bzero(&kfw_controls.policies,10*sizeof(policy_t)); //TODO change 10 as macro
+
+                // send request to kernel
+                kfw_controls.AUX_functions_returns=send_to_kernel(&consistencyFlags,&kfw_controls,&kfwp_controls,0b00001111,NULL,NULL,NULL,NULL,NULL);
+
+            }
+
+
+
+            printf("policies\n");
+            printf("-----------------\n");
+            for(int i=0;i<kfw_controls.current_kfw_policies;i++)
+                printf("policy %s\n",kfw_controls.policies[i].name);
         }
 
+
+
+
+
+
+        // ingress  /  egress
         // show polices (in|out)
         else if (regexec(&kfw_regex.regex_show_polices_with_dir, kfw_controls.user_command, 0, NULL, 0) ==0) {
-                split_string_with_position(kfw_controls.user_command,2,kfw_controls.AUX_policy_direction);
+            split_string_with_position(kfw_controls.user_command,2,kfw_controls.AUX_policy_direction);
 
-                if(strcmp(kfw_controls.AUX_policy_direction,"in")==0) {
-                    printf("ingress policies\n");
-                    printf("-----------------\n");
-                    for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
-                        printf("%s , %s\n", ingress_policies.policyWithInterfaces[i].policy_name,
-                               ingress_policies.policyWithInterfaces[i].interface_name);
-                }
-                else {
-                    printf("egress policies\n");
-                    printf("-----------------\n");
-                    for(int i=0;i<egress_policies.current_egress_policies;i++)
-                        printf("%s , %s\n",egress_policies.policyWithInterfaces[i].policy_name,egress_policies.policyWithInterfaces[i].interface_name);
+            if(strcmp(kfw_controls.AUX_policy_direction,"in")==0) {
+                printf("ingress policies\n");
+                printf("-----------------\n");
+                for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
+                    printf("%s , %s\n", ingress_policies.policyWithInterfaces[i].policy_name,
+                           ingress_policies.policyWithInterfaces[i].interface_name);
+            }
+            else {
+                printf("egress policies\n");
+                printf("-----------------\n");
+                for(int i=0;i<egress_policies.current_egress_policies;i++)
+                    printf("%s , %s\n",egress_policies.policyWithInterfaces[i].policy_name,egress_policies.policyWithInterfaces[i].interface_name);
 
             }
         }
@@ -636,15 +1247,15 @@ int main() {
 
             printf("Interface : %s\n", kfw_controls.AUX_interface_name);
             if(strcmp(kfw_controls.AUX_policy_direction,"in")==0) {
-                    printf("Ingress\n");
+                printf("Ingress\n");
 
-                    for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
-                        if (strcmp(ingress_policies.policyWithInterfaces[i].interface_name,
-                                   kfw_controls.AUX_interface_name) ==
-                            0) {
-                            printf("   policy %s\n", ingress_policies.policyWithInterfaces[i].policy_name);
-                            break;
-                        }
+                for (int i = 0; i < ingress_policies.current_ingress_policies; i++)
+                    if (strcmp(ingress_policies.policyWithInterfaces[i].interface_name,
+                               kfw_controls.AUX_interface_name) ==
+                        0) {
+                        printf("   policy %s\n", ingress_policies.policyWithInterfaces[i].policy_name);
+                        break;
+                    }
             }
             else {
                 printf("engress\n");
@@ -658,9 +1269,29 @@ int main() {
             }
         }
 
+
+
+
+
         // show datas
         else if (regexec(&kfw_regex.regex_show_datas, kfw_controls.user_command, 0, NULL, 0) ==0) {
+
+            //first check datas cache consistency
+
+            // if datas was not consitent
+            if(consistencyFlags.datas==0){
+                // first clear datas cache
+                bzero(&kfw_controls.datas,10*sizeof(data_t)); //TODO change 10 as macro
+
+                // send request to kernel
+                kfw_controls.AUX_functions_returns=send_to_kernel(&consistencyFlags,&kfw_controls,&kfwp_controls,0b00001110,NULL,NULL,NULL,NULL,NULL);
+
+            }
+
+
+            //TODO fields of output
             printf("--------DATAS-------\n");
+
             for(int i=0;i<kfw_controls.current_kfw_datas;i++){
                 if(kfw_controls.datas[i].type==1)
                     printf("%s (all)\n",kfw_controls.datas[i].name);
@@ -671,9 +1302,15 @@ int main() {
 
         }
 
+
+
+
+
+
         // quit / exit
         else if (regexec(&kfw_regex.regex_quit_exit, kfw_controls.user_command, 0, NULL, 0) ==0){
             printf("Bye!!\n");
+
             return 0;
         }
 
@@ -687,7 +1324,7 @@ int main() {
 //
 //        }
 
-}
+    }
 
 
 
@@ -711,7 +1348,7 @@ onebyte_np_t get_index_of_policyint_in_egress(egress_policies_t *egressPolicies 
         if(strncmp(egressPolicies->policyWithInterfaces[i].policy_name,policy_name,strlen(policy_name))==0
            && strcmp(egressPolicies->policyWithInterfaces[i].interface_name,interface_name)==0)
 
-                return i;
+            return i;
     }
     return -1;
 
@@ -721,7 +1358,7 @@ onebyte_np_t get_index_of_policyint_in_ingress(ingress_policies_t *ingressPolici
 
     for(int i=0;i<ingressPolicies->current_ingress_policies;i++){
         if(strncmp(ingressPolicies->policyWithInterfaces[i].policy_name,policy_name,strlen(policy_name))==0
-        && strcmp(ingressPolicies->policyWithInterfaces[i].interface_name,interface_name)==0)
+           && strcmp(ingressPolicies->policyWithInterfaces[i].interface_name,interface_name)==0)
             return i;
     }
     return -1;
@@ -756,6 +1393,7 @@ onebyte_np_t get_index_of_policy_in_policies(kfw_controls_t *kfw_controls,onebyt
 
 }
 
+
 void split_string_with_position(onebyte_p_t *str,onebyte_p_t position , onebyte_p_t * dst){
     bzero(dst,strlen(dst));
     onebyte_p_t element_pos=-1;
@@ -780,7 +1418,7 @@ void split_string_with_position(onebyte_p_t *str,onebyte_p_t position , onebyte_
 }
 
 void split_service_policy_command(onebyte_p_t *service_policy_cmd,onebyte_p_t *policy_name,onebyte_p_t *interface_name ,onebyte_p_t * direction,
-        onebyte_p_t policy_name_pos ,onebyte_p_t interface_name_pos,onebyte_p_t direction_pos){
+                                  onebyte_p_t policy_name_pos ,onebyte_p_t interface_name_pos,onebyte_p_t direction_pos){
 
 
     // service asd
@@ -831,7 +1469,6 @@ void split_service_policy_command(onebyte_p_t *service_policy_cmd,onebyte_p_t *p
     }
 }
 
-
 void split_data_with_action_command(onebyte_p_t *data_with_action_cmd,onebyte_p_t *data_name,onebyte_p_t *action , onebyte_p_t data_name_pos ,onebyte_p_t action_pos){
     onebyte_p_t data_with_action_command_ele=-1;
     onebyte_p_t *temp;
@@ -879,10 +1516,10 @@ void split_policy_definition_command(onebyte_p_t *policy_def,onebyte_p_t *policy
             if(policy_command_ele==0 && name_pos==2)
                 policy_def += show_or_no_len;    // skipping (show/no) which is (4/2) characters and specified by onebyte_p_t show_or_no_len
 
-             // we have to skip (policy) in two cases :
-             // 1: we have positive form which (policy) is the first element ( name_pos = 1 , policy_pos = 0 )
-             //                 or
-             // 2: we have negative form which‌ (policy) is the second element ( name_pos = 2 , policy_pos = 1 )
+                // we have to skip (policy) in two cases :
+                // 1: we have positive form which (policy) is the first element ( name_pos = 1 , policy_pos = 0 )
+                //                 or
+                // 2: we have negative form which‌ (policy) is the second element ( name_pos = 2 , policy_pos = 1 )
             else if((policy_command_ele==0 && name_pos==1) || (policy_command_ele==1 && name_pos==2))
                 policy_def += 6;   // skipping (policy) which is 6 characters
 
