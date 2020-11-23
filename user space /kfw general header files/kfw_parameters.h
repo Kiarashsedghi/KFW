@@ -1,8 +1,9 @@
 /*
+ *  THIS FILE CONTAINS KFW MAIN PARAMETERS
+ *
  *
  *  Written By :  Kiarash Sedghi
  *
- *  THIS FILE CONTAINS KFW MAIN PARAMETERS
  *
  * */
 
@@ -19,7 +20,7 @@
  * */
 
 
-// Parameters that control length policy_cache
+// Parameters that indicate the length policies
 #define MAX_LEN_RULE_TYPE 10
 #define MAX_LEN_RULE_VALUE 32
 #define MAX_LEN_DATA_NAME 10
@@ -38,8 +39,8 @@
 // Parameters that control quantity policy_cache
 #define MAX_RULES_IN_DATA  10
 #define MAX_DATA_IN_KFW  10
-#define MAX_DATA_ACTIONS_IN_POLICY 20
 #define MAX_POLICY_IN_KFW 10
+#define MAX_DATA_ACTIONS_IN_POLICY 20
 
 #define MAX_INGRESS_POLICIES 100
 #define MAX_EGRESS_POLICIES 100
