@@ -66,8 +66,7 @@ struct kfwp_request{
                  | N | X | X | X | X | X | X |
                   --- --- --- --- --- --- ---
 
-             > First bit of TYPE is Negation bit.For commands that accepts
-               the no form ( negate the command with (no) ) , we have not allocated a new type
+             > First bit of TYPE is Negation bit.For commands that accepts the no form ( negate the command with (no) ) , we have not allocated a new type
                message but we make the first bit to 1 , indicating that the command is negation of
                what has been entered.
 
@@ -138,7 +137,7 @@ struct kfwp_reply{
 
 
         ******************************************************
-        *  Kernel modules sends data in page units.          *
+        *  Kernel module sends data in page units.          *
         *  The reason is netlink sockets are datagram based. *
         ******************************************************
 
