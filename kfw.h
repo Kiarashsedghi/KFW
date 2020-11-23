@@ -158,18 +158,18 @@ struct policy{
     data_with_action_t data_with_actions[MAX_DATA_ACTIONS_IN_POLICY]; // 20 * 17 = 340
 };
 
-struct policy_with_int{
+struct policy_with_int{ // 20bytes
     onebyte_p_t policy_name[MAX_LEN_POLICY_NAME];
     onebyte_p_t interface_name[MAX_LEN_INTERFACE_NAME];   //TODO‌ interface type or code ??
 };
 
-struct ingress_policies{
-    twobyte_p_t current_ingress_policies;
+struct ingress_policies{ // 100 * 20 = 2000bytes
+    onebyte_p_t current_ingress_policies;
     policy_with_int_t policyWithInterfaces[MAX_INGRESS_POLICIES];
 };
 
 struct egress_policies{
-    twobyte_p_t current_egress_policies;
+    onebyte_p_t current_egress_policies;
     policy_with_int_t policyWithInterfaces[MAX_EGRESS_POLICIES];
 };
 struct regex{
