@@ -1,21 +1,19 @@
 /*
  *
- *  THIS FILE CONTAINS THE MAIN DATA STRUCTURES AND TYPES USED IN KFW
+ *  THIS FILE CONTAINS THE MAIN DATA STRUCTURES AND TYPES USED IN KERNEL MODULE
  *
  *
- * Written By :  Kiarash Sedghi
+ *  Written By :  Kiarash Sedghi
  *
  *
  * */
-
 
 #ifndef KFW_KFW_DSTRUCTURES_H
 #define KFW_KFW_DSTRUCTURES_H
 #endif //KFW_KFW_DSTRUCTURES_H
 
 
-#include "kfw_parameters.h"
-
+#include "linux/kfw_parameters.h"
 
 
 // Bytes types
@@ -24,7 +22,8 @@ typedef unsigned char onebyte_p_t;
 typedef unsigned short twobyte_p_t;
 typedef signed short twobyte_np_t;
 
-// KFW main data structures types
+
+// Kernel Module main data structures types
 typedef struct rule rule_t;
 typedef struct data data_t;
 typedef struct data_with_action data_with_action_t;
@@ -32,6 +31,8 @@ typedef struct policy policy_t;
 typedef struct policy_with_int policy_with_int_t;
 typedef struct ingress_policies ingress_policies_t;
 typedef struct egress_policies egress_policies_t;
+typedef struct kfw_controls kfw_controls_t;
+
 
 
 
@@ -39,9 +40,6 @@ typedef struct egress_policies egress_policies_t;
 typedef struct kfwp_request kfwp_req_t;
 typedef struct kfwp_reply kfwp_reply_t;
 
-
-// KFW consistency flags types
-typedef struct consistency_flags consistency_flags_t;
 
 
 
@@ -150,28 +148,6 @@ struct kfwp_reply{
     onebyte_p_t status;
     onebyte_p_t page_cnt;
     twobyte_p_t page_size;
-};
-
-struct consistency_flags{
-    /*
-     * This structure contains consistency flags for different cache spaces.
-     *
-     * These flags are a way to find out whether our cache spaces for
-     * ( show commands ) are consistent with kernel or not.
-     *      Consistency: 1
-     *      Inconsistency: 0
-     *
-     * We have 4 main cache spaces in userspace kfw:
-     *          data_cache : stores data_t structures
-     *          policy_cache:  stores policy_t structures
-     *          ingress_policy_cache:  stores policy_with_int structures
-     *          egress_policy_cache: stores policy_with_int structures
-     * */
-
-    onebyte_p_t data_cache;
-    onebyte_p_t policy_cache;
-    onebyte_p_t ingress_policy_cache;
-    onebyte_p_t egress_policy_cache;
 };
 
 struct rule {
@@ -363,6 +339,13 @@ struct egress_policies{
     onebyte_p_t current_egress_policies;
     policy_with_int_t policyWithInterfaces[MAX_EGRESS_POLICIES];
 };
+
+
+
+
+
+
+
 
 
 

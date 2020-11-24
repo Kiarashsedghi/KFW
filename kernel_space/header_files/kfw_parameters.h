@@ -9,6 +9,7 @@
 
 #ifndef KFW_KFW_PARAMETERS_H
 #define KFW_KFW_PARAMETERS_H
+#endif //KFW_KFW_PARAMETERS_H
 
 
 
@@ -55,4 +56,3 @@
 
 
 
-#endif //KFW_KFW_PARAMETERS_H

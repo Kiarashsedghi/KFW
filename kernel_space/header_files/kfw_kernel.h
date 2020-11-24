@@ -1,11 +1,17 @@
-//
-// Created by kiarash on 11/24/20.
-//
-
+/*
+ *
+ *  THIS FILE CONTAINS KERNEL MODULE MAIN PROGRAM CONTROLLERS
+ *
+ *
+ *
+ *  Written By :  Kiarash Sedghi
+ *
+ *
+ * */
 #ifndef KFW_KFW_KERNEL_H
 #define KFW_KFW_KERNEL_H
 
-#include "../kfw general header files/kfw_dstructures.h"
+#include "linux/kfw_dstructures.h"
 
 
 typedef struct kmc_controles  kmc_controles_t;

@@ -1,12 +1,22 @@
+/*
+ *
+ *  THIS FILE CONTAINS KERNEL‌ MODULE MAIN PROGRAM
+ *
+ *
+ *
+ *  Written By :  Kiarash Sedghi
+ *
+ *
+ * */
+
 #include <linux/module.h>
 #include <net/sock.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
 #include <linux/slab.h>
-#include <linux/kfw.h>
 
-#include "kfw_kernel.h"
-#include "kfw_kernel_functions.h"
+#include "linux/kfw_kernel.h"
+#include "linux/kfw_kernel_functions.h"
 
 kfwp_req_t *kfwpmss;
 kfwp_reply_t *kfwprepmss;
@@ -16,7 +26,6 @@ kfwp_reply_t *kfwprepmss;
 
 struct sock *nl_sk = NULL;
 
-typedef struct kmc kmc_t;
 
 onebyte_p_t q[200];
 
@@ -63,7 +72,6 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
 
-
     // data definition
     if (kfwpmss->type == 0b00000000) {
 
@@ -91,7 +99,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 //send reply back to userspace
                 kfwprepmss->status = 0b00000100;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -154,7 +162,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 //send reply back to userspace
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -185,7 +193,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                 kfwprepmss->status = 0b00000001;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 printk(KERN_INFO
                 "inja2\n");
 
@@ -209,13 +217,13 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                     kfwprepmss->status = 0b00000000;
-                    kfwprepmss->dg_size = 200;
-                    kfwprepmss->dg_cnt = ((int) (sizeof(data_t) / kfwprepmss->dg_size)) + 1;
+                    kfwprepmss->page_size = 200;
+                    kfwprepmss->page_cnt = ((int) (sizeof(data_t) / kfwprepmss->page_size)) + 1;
 
                     printk(KERN_INFO
-                    "cnt{%d}\n", kfwprepmss->dg_cnt);
+                    "cnt{%d}\n", kfwprepmss->page_cnt);
                     printk(KERN_INFO
-                    "dgsize{%d}\n", kfwprepmss->dg_size);
+                    "dgsize{%d}\n", kfwprepmss->page_size);
 
 
 
@@ -239,9 +247,9 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                     // reallocate for simple reply
                     int i = 0;
-                    for (i = 0; i < kfwprepmss->dg_cnt; i++) {
+                    for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
-                        skb_out = nlmsg_new(kfwprepmss->dg_size, 0);
+                        skb_out = nlmsg_new(kfwprepmss->page_size, 0);
                         if (!skb_out) {
 
                             printk(KERN_ERR
@@ -249,23 +257,23 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                             return;
 
                         }
-                        nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->dg_size, 0);
+                        nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->page_size, 0);
                         NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
                         printk(KERN_INFO
                         "%d\n", i);
 
-                        if (i == kfwprepmss->dg_cnt - 1) {
-                            memcpy(q, (void *) kmc_i.AUX_data_st_ptr + i * kfwprepmss->dg_size,
-                                   sizeof(data_t) - i * kfwprepmss->dg_size + 1);
+                        if (i == kfwprepmss->page_cnt - 1) {
+                            memcpy(q, (void *) kmc_i.AUX_data_st_ptr + i * kfwprepmss->page_size,
+                                   sizeof(data_t) - i * kfwprepmss->page_size + 1);
                             printk(KERN_INFO
-                            "%d\n", sizeof(data_t) - i * kfwprepmss->dg_size);
+                            "%d\n", sizeof(data_t) - i * kfwprepmss->page_size);
 
-                            memcpy(nlmsg_data(nlh), q, kfwprepmss->dg_size);
+                            memcpy(nlmsg_data(nlh), q, kfwprepmss->page_size);
                         } else {
 
-                            memcpy(nlmsg_data(nlh), (void *) kmc_i.AUX_data_st_ptr + i * kfwprepmss->dg_size,
-                                   kfwprepmss->dg_size);
+                            memcpy(nlmsg_data(nlh), (void *) kmc_i.AUX_data_st_ptr + i * kfwprepmss->page_size,
+                                   kfwprepmss->page_size);
                         }
                         res = nlmsg_unicast(nl_sk, skb_out, pid);
 //
@@ -283,7 +291,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                     kfwprepmss->status = 0b00000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -313,7 +321,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         strcpy(kmc_i.AUX_rule_type, kfwpmss->arg1);
         strcpy(kmc_i.AUX_rule_value, kfwpmss->arg2);
-        strcpy(kmc_i.AUX_data_name, kfwpmss->context);
+        strcpy(kmc_i.AUX_data_name, kfwpmss->arg3);
 
         kmc_i.AUX_functions_returns = get_index_of_rule_in_rules(kmc_i.AUX_data_st_ptr, kmc_i.AUX_rule_type);
 
@@ -341,7 +349,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
             kfwprepmss->status = 0b00000000;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -363,7 +371,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
             kfwprepmss->status = 0b00000000;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -463,7 +471,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         // send reply to userspace
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_cnt = 0;
+        kfwprepmss->page_cnt = 0;
         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
         res = nlmsg_unicast(nl_sk, skb_out, pid);
         printk(KERN_INFO
@@ -488,7 +496,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         // send reply to userspace
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_cnt = 0;
+        kfwprepmss->page_cnt = 0;
         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
         res = nlmsg_unicast(nl_sk, skb_out, pid);
         printk(KERN_INFO
@@ -516,7 +524,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         // send reply to userspace
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_cnt = 0;
+        kfwprepmss->page_cnt = 0;
         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
         res = nlmsg_unicast(nl_sk, skb_out, pid);
         printk(KERN_INFO
@@ -559,7 +567,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
                 //send reply back to userspace
                 kfwprepmss->status = 0b00000100;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -616,7 +624,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 //send reply back to userspace
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -643,13 +651,13 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_size = 200;
-                kfwprepmss->dg_cnt = ((int) (sizeof(policy_t) / kfwprepmss->dg_size)) + 1;
+                kfwprepmss->page_size = 200;
+                kfwprepmss->page_cnt = ((int) (sizeof(policy_t) / kfwprepmss->page_size)) + 1;
 
                 printk(KERN_INFO
-                "cnt{%d}\n", kfwprepmss->dg_cnt);
+                "cnt{%d}\n", kfwprepmss->page_cnt);
                 printk(KERN_INFO
-                "dgsize{%d}\n", kfwprepmss->dg_size);
+                "dgsize{%d}\n", kfwprepmss->page_size);
 
 
 
@@ -673,9 +681,9 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 // reallocate for simple reply
                 int i = 0;
-                for (i = 0; i < kfwprepmss->dg_cnt; i++) {
+                for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
-                    skb_out = nlmsg_new(kfwprepmss->dg_size, 0);
+                    skb_out = nlmsg_new(kfwprepmss->page_size, 0);
                     if (!skb_out) {
 
                         printk(KERN_ERR
@@ -683,24 +691,24 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                         return;
 
                     }
-                    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->dg_size, 0);
+                    nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->page_size, 0);
                     NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
                     printk(KERN_INFO
                     "%d\n", i);
 
-                    if (i == kfwprepmss->dg_cnt - 1) {
-                        memcpy(q, (void *) kmc_i.AUX_policy_st_ptr + i * kfwprepmss->dg_size,
-                               sizeof(policy_t) - i * kfwprepmss->dg_size + 1);
+                    if (i == kfwprepmss->page_cnt - 1) {
+                        memcpy(q, (void *) kmc_i.AUX_policy_st_ptr + i * kfwprepmss->page_size,
+                               sizeof(policy_t) - i * kfwprepmss->page_size + 1);
 
                         printk(KERN_INFO
-                        "%d\n", sizeof(policy_t) - i * kfwprepmss->dg_size);
+                        "%d\n", sizeof(policy_t) - i * kfwprepmss->page_size);
 
-                        memcpy(nlmsg_data(nlh), q, kfwprepmss->dg_size);
+                        memcpy(nlmsg_data(nlh), q, kfwprepmss->page_size);
                     } else {
 
-                        memcpy(nlmsg_data(nlh), (void *) kmc_i.AUX_policy_st_ptr + i * kfwprepmss->dg_size,
-                               kfwprepmss->dg_size);
+                        memcpy(nlmsg_data(nlh), (void *) kmc_i.AUX_policy_st_ptr + i * kfwprepmss->page_size,
+                               kfwprepmss->page_size);
                     }
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
 //
@@ -718,7 +726,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -765,7 +773,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                 kfwprepmss->status = 0b00000001;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -785,7 +793,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                     kfwprepmss->status = 0b00000010;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -819,7 +827,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                     kfwprepmss->status = 0b00000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -840,7 +848,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
             kfwprepmss->status = 0b00000011;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -887,7 +895,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             //send reply back to userspace
             // saying error of not existance of the data
             kfwprepmss->status = 0b00000001;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -929,7 +937,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 //send reply back to userspace
                 // saying creation of data_with_action_successful
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -953,7 +961,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 //send reply back to userspace
                 // saying creation of data_with_action_successful
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -1025,7 +1033,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         // send reply to userspace
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_cnt = 0;
+        kfwprepmss->page_cnt = 0;
         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
         res = nlmsg_unicast(nl_sk, skb_out, pid);
         printk(KERN_INFO
@@ -1065,7 +1073,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 // send reply to userspace
                 kfwprepmss->status = 0b00000011;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -1101,7 +1109,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
                 // send reply to userspace
                 kfwprepmss->status = 0b00000000;
-                kfwprepmss->dg_cnt = 0;
+                kfwprepmss->page_cnt = 0;
                 memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                 res = nlmsg_unicast(nl_sk, skb_out, pid);
                 printk(KERN_INFO
@@ -1122,7 +1130,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
             // send reply to userspace
             kfwprepmss->status = 0b00000010;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -1146,13 +1154,13 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_size = 13; //TODO‌ make this a macro
-        kfwprepmss->dg_cnt = kmc_i.current_kfw_datas;
+        kfwprepmss->page_size = 13; //TODO‌ make this a macro
+        kfwprepmss->page_cnt = kmc_i.current_kfw_datas;
 
         printk(KERN_INFO
-        "cnt{%d}\n", kfwprepmss->dg_cnt);
+        "cnt{%d}\n", kfwprepmss->page_cnt);
         printk(KERN_INFO
-        "dgsize{%d}\n", kfwprepmss->dg_size);
+        "dgsize{%d}\n", kfwprepmss->page_size);
 
 
 
@@ -1172,9 +1180,9 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 //
         int i = 0;
-        for (i = 0; i < kfwprepmss->dg_cnt; i++) {
+        for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
-            skb_out = nlmsg_new(kfwprepmss->dg_size, 0);
+            skb_out = nlmsg_new(kfwprepmss->page_size, 0);
             if (!skb_out) {
 
                 printk(KERN_ERR
@@ -1182,14 +1190,14 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 return;
 
             }
-            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->dg_size, 0);
+            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->page_size, 0);
             NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
             printk(KERN_INFO
             "%d\n", i);
 
 
-            memcpy(nlmsg_data(nlh), (void *) &kmc_i.datas + i * sizeof(data_t), kfwprepmss->dg_size);
+            memcpy(nlmsg_data(nlh), (void *) &kmc_i.datas + i * sizeof(data_t), kfwprepmss->page_size);
             printk(KERN_INFO
             "copying data %s\n", kmc_i.datas[i].name);
             printk(KERN_INFO
@@ -1217,13 +1225,13 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_size = 12; //TODO‌ make this a macro
-        kfwprepmss->dg_cnt = kmc_i.current_kfw_policies;
+        kfwprepmss->page_size = 12; //TODO‌ make this a macro
+        kfwprepmss->page_cnt = kmc_i.current_kfw_policies;
 
         printk(KERN_INFO
-        "cnt{%d}\n", kfwprepmss->dg_cnt);
+        "cnt{%d}\n", kfwprepmss->page_cnt);
         printk(KERN_INFO
-        "dgsize{%d}\n", kfwprepmss->dg_size);
+        "dgsize{%d}\n", kfwprepmss->page_size);
 
 
 
@@ -1243,9 +1251,9 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 //
         int i = 0;
-        for (i = 0; i < kfwprepmss->dg_cnt; i++) {
+        for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
-            skb_out = nlmsg_new(kfwprepmss->dg_size, 0);
+            skb_out = nlmsg_new(kfwprepmss->page_size, 0);
             if (!skb_out) {
 
                 printk(KERN_ERR
@@ -1253,7 +1261,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 return;
 
             }
-            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->dg_size, 0);
+            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->page_size, 0);
             NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
             printk(KERN_INFO
@@ -1264,7 +1272,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             printk(KERN_INFO
             "copying curr %d\n", kmc_i.policies[i].current_data_actions);
 
-            memcpy(nlmsg_data(nlh), (void *) &kmc_i.policies + i * sizeof(policy_t), kfwprepmss->dg_size);
+            memcpy(nlmsg_data(nlh), (void *) &kmc_i.policies + i * sizeof(policy_t), kfwprepmss->page_size);
 
 
             res = nlmsg_unicast(nl_sk, skb_out, pid);
@@ -1295,7 +1303,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         strcpy(kmc_i.AUX_policy_name, kfwpmss->arg1);
         strcpy(kmc_i.AUX_interface_name, kfwpmss->arg2);
-        strcpy(kmc_i.AUX_policy_direction, kfwpmss->context);
+        strcpy(kmc_i.AUX_policy_direction, kfwpmss->arg3);
 
         printk(KERN_INFO
         "service policy command issued %s\n", kmc_i.AUX_policy_name);
@@ -1313,7 +1321,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
             //send reply back to userspace
             kfwprepmss->status = 0b00000001;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -1348,7 +1356,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     //send reply back to userspace
                     // saying error of not existance of the data
                     kfwprepmss->status = 0b00000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1380,7 +1388,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     //send reply back to userspace
                     // saying error of not existance of the data
                     kfwprepmss->status = 0b10000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1411,7 +1419,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     //send reply back to userspace
                     // saying error of not existance of the data
                     kfwprepmss->status = 0b00000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1446,7 +1454,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     //send reply back to userspace
                     // saying error of not existance of the data
                     kfwprepmss->status = 0b10000000;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1480,7 +1488,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
         strcpy(kmc_i.AUX_policy_name, kfwpmss->arg1);
         strcpy(kmc_i.AUX_interface_name, kfwpmss->arg2);
-        strcpy(kmc_i.AUX_policy_direction, kfwpmss->context);
+        strcpy(kmc_i.AUX_policy_direction, kfwpmss->arg3);
 
         printk(KERN_INFO
         "service policy command issued %s\n", kmc_i.AUX_policy_name);
@@ -1498,7 +1506,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
             //send reply back to userspace
             kfwprepmss->status = 0b00000001;
-            kfwprepmss->dg_cnt = 0;
+            kfwprepmss->page_cnt = 0;
             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
             res = nlmsg_unicast(nl_sk, skb_out, pid);
             printk(KERN_INFO
@@ -1539,7 +1547,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                         //send reply back to userspace
                         // saying error of not existance of the data
                         kfwprepmss->status = 0b00000010;
-                        kfwprepmss->dg_cnt = 0;
+                        kfwprepmss->page_cnt = 0;
                         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                         res = nlmsg_unicast(nl_sk, skb_out, pid);
                         printk(KERN_INFO
@@ -1572,7 +1580,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
                         kfwprepmss->status = 0b00000000;
-                        kfwprepmss->dg_cnt = 0;
+                        kfwprepmss->page_cnt = 0;
                         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                         res = nlmsg_unicast(nl_sk, skb_out, pid);
                         printk(KERN_INFO
@@ -1592,7 +1600,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     // send reply back to user telling no policy has been set on
                     // the interface specified
                     kfwprepmss->status = 0b00000011;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1634,7 +1642,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                         //send reply back to userspace
                         // saying error of not existance of the data
                         kfwprepmss->status = 0b00000010;
-                        kfwprepmss->dg_cnt = 0;
+                        kfwprepmss->page_cnt = 0;
                         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                         res = nlmsg_unicast(nl_sk, skb_out, pid);
                         printk(KERN_INFO
@@ -1672,7 +1680,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                             //send reply back to userspace
                             // saying error of not existance of the data
                             kfwprepmss->status = 0b00000000;
-                            kfwprepmss->dg_cnt = 0;
+                            kfwprepmss->page_cnt = 0;
                             memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                             res = nlmsg_unicast(nl_sk, skb_out, pid);
                             printk(KERN_INFO
@@ -1694,7 +1702,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
                     kfwprepmss->status = 0b00000011;
-                    kfwprepmss->dg_cnt = 0;
+                    kfwprepmss->page_cnt = 0;
                     memcpy(nlmsg_data(nlh), kfwprepmss, 4);
                     res = nlmsg_unicast(nl_sk, skb_out, pid);
                     printk(KERN_INFO
@@ -1719,13 +1727,13 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_size = sizeof(policy_with_int_t); //TODO‌ make this a macro
-        kfwprepmss->dg_cnt = ingress_policies.current_ingress_policies;
+        kfwprepmss->page_size = sizeof(policy_with_int_t); //TODO‌ make this a macro
+        kfwprepmss->page_cnt = ingress_policies.current_ingress_policies;
 
         printk(KERN_INFO
-        "cnt{%d}\n", kfwprepmss->dg_cnt);
+        "cnt{%d}\n", kfwprepmss->page_cnt);
         printk(KERN_INFO
-        "dgsize{%d}\n", kfwprepmss->dg_size);
+        "dgsize{%d}\n", kfwprepmss->page_size);
 
 
         memcpy(nlmsg_data(nlh), kfwprepmss, 4);
@@ -1739,9 +1747,9 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
         int i = 0;
-        for (i = 0; i < kfwprepmss->dg_cnt; i++) {
+        for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
-            skb_out = nlmsg_new(kfwprepmss->dg_size, 0);
+            skb_out = nlmsg_new(kfwprepmss->page_size, 0);
             if (!skb_out) {
 
                 printk(KERN_ERR
@@ -1749,14 +1757,14 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                 return;
 
             }
-            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->dg_size, 0);
+            nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, kfwprepmss->page_size, 0);
             NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
             printk(KERN_INFO
             "%d\n", i);
 
             memcpy(nlmsg_data(nlh), (void *) &ingress_policies.policyWithInterfaces + i * sizeof(policy_with_int_t),
-                   kfwprepmss->dg_size);
+                   kfwprepmss->page_size);
 
 
             res = nlmsg_unicast(nl_sk, skb_out, pid);
@@ -1781,11 +1789,11 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
         kfwprepmss->status = 0b00000000;
-        kfwprepmss->dg_size=sizeof(policy_with_int_t); //TODO‌ make this a macro
-        kfwprepmss->dg_cnt =egress_policies.current_egress_policies;
+        kfwprepmss->page_size=sizeof(policy_with_int_t); //TODO‌ make this a macro
+        kfwprepmss->page_cnt =egress_policies.current_egress_policies;
 
-        printk(KERN_INFO"cnt{%d}\n", kfwprepmss->dg_cnt);
-        printk(KERN_INFO"dgsize{%d}\n", kfwprepmss->dg_size);
+        printk(KERN_INFO"cnt{%d}\n", kfwprepmss->page_cnt);
+        printk(KERN_INFO"dgsize{%d}\n", kfwprepmss->page_size);
 
 
 
@@ -1798,22 +1806,22 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
         int i=0;
-        for(i=0;i<kfwprepmss->dg_cnt;i++){
+        for(i=0;i<kfwprepmss->page_cnt;i++){
 
-            skb_out = nlmsg_new(kfwprepmss->dg_size,0);
+            skb_out = nlmsg_new(kfwprepmss->page_size,0);
             if(!skb_out)
             {
                 printk(KERN_ERR "Failed to allocate new skb\n");
                 return;
             }
 
-            nlh=nlmsg_put(skb_out,0,0,NLMSG_DONE,kfwprepmss->dg_size,0);
+            nlh=nlmsg_put(skb_out,0,0,NLMSG_DONE,kfwprepmss->page_size,0);
             NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
             printk(KERN_INFO"%d\n",i);
 
 
-            memcpy(nlmsg_data(nlh), (void *)&egress_policies.policyWithInterfaces + i * sizeof(policy_with_int_t),kfwprepmss->dg_size);
+            memcpy(nlmsg_data(nlh), (void *)&egress_policies.policyWithInterfaces + i * sizeof(policy_with_int_t),kfwprepmss->page_size);
 
 
 

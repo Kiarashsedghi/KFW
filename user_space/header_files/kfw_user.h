@@ -16,7 +16,7 @@
 
 #include <sys/socket.h>
 #include <linux/netlink.h>
-#include "../kfw general header files/kfw_dstructures.h"
+#include "kfw_dstructures.h"
 
 
 

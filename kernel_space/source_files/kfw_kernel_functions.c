@@ -1,6 +1,6 @@
 /*
  *
- *  THIS FILE CONTAINS KFW MODULE MAIN FUNCTIONS
+ *  THIS FILE CONTAINS KERNEL MODULE MAIN FUNCTIONS
  *
  *
  *
@@ -9,9 +9,9 @@
  *
  * */
 
-
-#include "kfw_kernel.h"
-#include "kfw_kernel_functions.h"
+#include <linux/module.h>
+#include "linux/kfw_kernel.h"
+#include "linux/kfw_kernel_functions.h"
 
 
 onebyte_np_t get_index_of_data_in_datas(kmc_controles_t *kmci,onebyte_p_t *data_name){

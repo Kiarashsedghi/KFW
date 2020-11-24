@@ -10,7 +10,6 @@
 
 #ifndef KFW_KFW_PARAMETERS_H
 #define KFW_KFW_PARAMETERS_H
-#endif //KFW_KFW_PARAMETERS_H
 
 /*
  *
@@ -36,7 +35,7 @@
 
 
 
-// Parameters that control quantity policy_cache
+// Parameters that control quantity policy
 #define MAX_RULES_IN_DATA  10
 #define MAX_DATA_IN_KFW  10
 #define MAX_POLICY_IN_KFW 10
@@ -93,15 +92,15 @@
 #define REGEX_QUICK_CLEAR "^\\s*clear\\s*$"
 
 
-#define REGEX_SHOW_DATAS "^\\s*show\\s+datas_cache\\s*$"
+#define REGEX_SHOW_DATAS "^\\s*show\\s+datas\\s*$"
 #define REGEX_SHOW_DATA_COMMAND "^\\s*show\\s+data\\s+[a-zA-Z0-9_]+\\s*$"
 
 
-#define REGEX_SHOW_POLICIES "^\\s*show\\s+policies_cache\\s*$"
+#define REGEX_SHOW_POLICIES "^\\s*show\\s+policies\\s*$"
 #define REGEX_SHOW_POLICY_COMMAND "^\\s*show\\s+policy\\s+[a-zA-Z0-9_]+\\s*$"
-#define REGEX_SHOW_POLICIES_WITH_DIRECTION "\\s*show\\s+policies_cache\\s+(in|out)\\s*"
-#define REGEX_SHOW_POLICIES_WITH_INTERFACE "^\\s*show\\s+policies_cache\\s+[a-zA-Z_0-9]+\\s*$"
-#define REGEX_SHOW_POLICIES_WITH_INTERFACE_DIR "^\\s*show\\s+policies_cache\\s+[a-zA-Z_0-9]+\\s+(in|out)\\s*$"
+#define REGEX_SHOW_POLICIES_WITH_DIRECTION "\\s*show\\s+policies\\s+(in|out)\\s*"
+#define REGEX_SHOW_POLICIES_WITH_INTERFACE "^\\s*show\\s+policies\\s+[a-zA-Z_0-9]+\\s*$"
+#define REGEX_SHOW_POLICIES_WITH_INTERFACE_DIR "^\\s*show\\s+policies\\s+[a-zA-Z_0-9]+\\s+(in|out)\\s*$"
 
 
 #define REGEX_QUIT_EXIT "^\\s*(quit|exit)\\s*$"
@@ -115,6 +114,7 @@
 
 
 
+#endif //KFW_KFW_PARAMETERS_H
 
 
 

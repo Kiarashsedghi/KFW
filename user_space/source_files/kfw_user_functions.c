@@ -15,8 +15,8 @@
 #include "regex.h"
 #include <unistd.h>
 #include <stdlib.h>
-#include "kfw_user.h"
-#include "kfw_user_functions.h"
+#include "../header_files/kfw_user.h"
+#include "../header_files/kfw_user_functions.h"
 
 
 #pragma clang diagnostic push

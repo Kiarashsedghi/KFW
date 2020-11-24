@@ -12,8 +12,8 @@
 #include <stdio.h>
 #include "string.h"
 #include "regex.h"
-#include "kfw_user.h"
-#include "kfw_user_functions.h"
+#include "../header_files/kfw_user.h"
+#include "../header_files/kfw_user_functions.h"
 
 
 #pragma clang diagnostic push
