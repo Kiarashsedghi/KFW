@@ -21,14 +21,14 @@
 
 // Parameters that indicate the length policies
 #define MAX_LEN_RULE_TYPE 10
-#define MAX_LEN_RULE_VALUE 32
+#define MAX_LEN_RULE_VALUE 40
 #define MAX_LEN_DATA_NAME 10
 #define MAX_LEN_POLICY_NAME 10
 #define MAX_LEN_INTERFACE_NAME 10
 #define MAX_LEN_ACTION_NAME 7
 #define MAX_LEN_POLICY_DIRECTION 4
 #define MAX_LEN_KFWP_ARG1 10
-#define MAX_LEN_KFWP_ARG2 32
+#define MAX_LEN_KFWP_ARG2 40
 #define MAX_LEN_KFWP_ARG3 10
 #define MAX_LEN_USER_COMMAND 40
 // --------------------------------------------
@@ -69,9 +69,10 @@
  * */
 // TODO‌ make (value)? value part of rule for simplicity of deletion for user
 
+#define REGEX_RULE_DEFINITION "^(\\s*(sip|dip)(\\s+not)?\\s+((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))(\\/((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])))?\\s*)$|^\\s*((proto)\\s+(not\\s+)?((udp|tcp|dhcp|icmp|igmp|ftp|telnet|smtp|pop3|imap|http|https|dns(\\/tcp|\\/udp)?))(,(udp|tcp|dhcp|icmp|igmp|ftp|telnet|smtp|pop3|imap|http|https|dns(\\/tcp|udp)?))*)\\s*$|^(\\s*(sudp|stcp|dtcp|dudp)(\\s+not)?\\s+(([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?)(,(([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?))*\\s*)$"
 
-#define REGEX_RULE_DEFINITION "^\\s*(proto)\\s+(udp|tcp)\\s*$"
-#define REGEX_RULE_DELETION "^\\s*(no\\s+)(proto)\\s+(udp|tcp)\\s*$"
+
+#define REGEX_RULE_DELETION "^\\s*a\\s*$"
 
 #define REGEX_DATA_DEFINITION "^\\s*data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"
 #define REGEX_DATA_DELETION "^\\s*(no\\s+)data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"

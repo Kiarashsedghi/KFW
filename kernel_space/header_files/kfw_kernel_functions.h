@@ -11,6 +11,8 @@
 #ifndef KFW_KFW_KERNEL_FUNCTIONS_H
 #define KFW_KFW_KERNEL_FUNCTIONS_H
 
+//int firewall_starter(void*nothing);
+//int talk2user_starter(void*nothing);
 
 onebyte_np_t get_index_of_data_in_datas(kmc_controles_t *kmci,onebyte_p_t *data_name);
 onebyte_np_t get_index_of_rule_in_rules(data_t *data_st ,onebyte_p_t *rule_type );

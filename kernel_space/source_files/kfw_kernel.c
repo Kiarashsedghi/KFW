@@ -14,17 +14,45 @@
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
 #include <linux/slab.h>
+#include<linux/init.h>
+#include<linux/kernel.h>
+#include<linux/kthread.h>
+#include<linux/sched.h>
+#include "linux/delay.h"
+#include <linux/netfilter.h>
+
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/inet.h>
+#include <linux/mutex.h>
 
 #include "linux/kfw_kernel.h"
 #include "linux/kfw_kernel_functions.h"
+
+
+struct task_struct *talk2user_thread;
+struct task_struct *firewall_thread;
+
+struct sock *nl_sk = NULL;
+static struct nf_hook_ops *nfho = NULL;
+
+
+
+struct mutex  mylock;
+
 
 kfwp_req_t *kfwpmss;
 kfwp_reply_t *kfwprepmss;
 
 
+// max dsn/tcp (7)
+char protocol_name[8];
+char *AUX_str_ptr;
+char *AUX_str_ptr_temp;
 
 
-struct sock *nl_sk = NULL;
 
 
 onebyte_p_t q[200];
@@ -34,18 +62,450 @@ ingress_policies_t ingress_policies;
 
 egress_policies_t egress_policies;
 
+int *port_num;
+int *start;
+onebyte_p_t *num;
+onebyte_p_t *temp;
+twobyte_p_t port=0;
+struct udphdr *udph_t;
+struct tcphdr *tcph_t;
+
+
+onebyte_p_t negataion;
+
+
+
+struct iphdr *iph_t;
+
 
 
 
 kmc_controles_t  kmc_i;
 
 
+int power(int x,int p){
+    int q=1;
+    int i;
+    for(i=0;i<p;i++)
+        q*=x;
+    return q;
+}
+
+onebyte_p_t check_in_range(int *port_ranges,twobyte_p_t port,onebyte_p_t negation_flag){
+
+    int i=0;
+    for(i=0;i<=50;i++)
+        printk(KERN_INFO "%d\n",*(start+i));
+
+    while(*port_ranges!=-2){
+        if(*(port_ranges+1)==-1) {
+            if (port >= *(port_ranges) && port <= *(port_ranges + 2)) {
+                    return 1|negation_flag;
+            }
+            else
+                port_ranges += 3;
+        }
+        else{
+
+            if(*port_ranges==port){
+                    return 1|negation_flag;
+            }
+            port_ranges++;
+        }
+    }
+    return 0|negation_flag;
+
+}
+
+void fill_port_arr(onebyte_p_t *rule_value){
+    port_num=start;
+    //inititalize the array with -2
+    int i;
+    for(i=0;i<50;i++) {
+        *(port_num+i) = -2;
+    }
+    num=rule_value;
+
+    // if the not used with the rule,skip num ptr by 1
+    if(*num==(int)'!')
+        num++;
+
+    port=0;
+    while(*num){
+        if(*num==(onebyte_p_t)'-'){
+            *port_num=-1;
+            port_num++;
+            num++;
+        }
+        else if(*num!=(onebyte_p_t)','){
+            temp=num;
+            while(*temp && *temp!=(onebyte_p_t)'-' && *temp!=(onebyte_p_t)',')
+                temp++;
+            port=0;
+            while(num!=temp){
+                port+=(*num-48)*power(10,temp-num-1);
+                num++;
+            }
+            *port_num=port;
+            port_num++;
+
+        } else{
+            num++;
+        }
+    }
 
 
+}
+
+onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_buff* skb) {
+
+    //TODO check direction??
+    // hardo jahat ahamiat dare msesinke
+    if (strcmp(rule_type, "dudp") == 0 || strcmp(rule_type, "sudp") == 0) {
+        if (iph_t->protocol == 17) {
+            udph_t = udp_hdr(skb);
+            fill_port_arr(rule_value);
+            if (*rule_value == (int) '!') {
+                // checking the negation form of the rule
+                if (strcmp(rule_type, "dudp") == 0)
+                    return check_in_range(start, ntohs(udph_t->dest), 1);
+                // check for source udp port
+                return check_in_range(start, ntohs(udph_t->source), 1);
+            } else {
+                // checking the positive form of the rule
+                if (strcmp(rule_type, "dudp") == 0)
+                    return check_in_range(start, ntohs(udph_t->dest), 0);
+                // check for source udp port
+                return check_in_range(start, ntohs(udph_t->source), 0);
+            }
+        }
+        // if the protocol was not udp , return 0 meaning not matched
+        return 0;
+    }
+
+    else if (strcmp(rule_type, "dtcp") == 0 || strcmp(rule_type, "stcp") == 0) {
+        if (iph_t->protocol == 6) {
+            tcph_t = tcp_hdr(skb);
+            fill_port_arr(rule_value);
+            if (*rule_value == (int) '!') {
+                // checking the negation form of the rule
+                if (strcmp(rule_type, "dtcp") == 0)
+                    return check_in_range(start, ntohs(tcph_t->dest), 1);
+                // check for source udp port
+                return check_in_range(start, ntohs(tcph_t->source), 1);
+            } else {
+                // checking the positive form of the rule
+                if (strcmp(rule_type, "dtcp") == 0)
+                    return check_in_range(start, ntohs(tcph_t->dest), 0);
+                // check for source udp port
+                return check_in_range(start, ntohs(tcph_t->source), 0);
+            }
+        }
+        // if the protocol was not tcp , return 0 meaning not matched
+        return 0;
+    }
+
+    else if(strcmp(rule_type,"proto")==0){
+        AUX_str_ptr=rule_value;
+        negataion=0;
+        if(*rule_value==(int)'!') {
+            AUX_str_ptr++;
+            // set negation variable to 1
+            negataion=1;
+        }
+        // parsing rule value
+        while(*AUX_str_ptr){
+            if(*AUX_str_ptr!=(int)','){
+                AUX_str_ptr_temp=AUX_str_ptr;
+                while(*AUX_str_ptr && *AUX_str_ptr!=(int)',')
+                    AUX_str_ptr++;
+                memset(protocol_name,0,8);
+                memcpy(protocol_name,AUX_str_ptr_temp,AUX_str_ptr-AUX_str_ptr_temp);
+                printk(KERN_INFO "proto:%s\n",protocol_name);
+                //protocol_name check
+                if(strcmp(protocol_name,"tcp")==0){
+                    //checking if the protocol was tcp
+                    if(iph_t->protocol==6)
+                        return 1|negataion;
+                   // return 0|negataion;
+                }
+
+                else if(strcmp(protocol_name,"udp")==0){
+                    if(iph_t->protocol==17)
+                        return 1|negataion;
+                   // return 0|negataion;
+                }
+
+                else if(strcmp(protocol_name,"dns")==0 || strcmp(protocol_name,"dns/udp")==0){
+                    printk(KERN_INFO "aval dnsn\n");
+                    if(iph_t->protocol==17){
+                        udph_t = udp_hdr(skb);
+
+                        // including both server and client
+                        if(ntohs(udph_t->dest)==53 || ntohs(udph_t->source)==53)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                 //   return 0|negataion;
+                }
+
+                else if(strcmp(protocol_name,"dns/tcp")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t = tcp_hdr(skb);
+                        // including both server and client
+                        if(ntohs(tcph_t->dest)==53 || ntohs(tcph_t->source)==53)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                    //return 0|negataion;
+                }
+
+                else if(strcmp(protocol_name,"dhcp")==0){
+                    if(iph_t->protocol==17){
+                        //check both dst_port and src_prt
+                        udph_t = udp_hdr(skb);
+
+                        // including both server and client
+                        //TODO we can reducre this check too
+                        if(ntohs(udph_t->dest)==67 || ntohs(udph_t->dest)==68 || ntohs(udph_t->source)==67 || ntohs(udph_t->source)==68)
+                            return 1|negataion;
+                       // return 0|negataion;
+                    }
+                    //return 0|negataion;
+                }
+
+                else if(strcmp(protocol_name,"icmp")==0){
+                    printk(KERN_INFO "aval icmp\n");
+
+                    if(iph_t->protocol==1)
+                        return 1|negataion;
+                    //return 0|negataion;
+
+                }
+
+                else if(strcmp(protocol_name,"igmp")==0){
+                    if(iph_t->protocol==2)
+                        return 1|negataion;
+                    //return 0|negataion;
+
+                }
+
+                //TODO‌ recheck
+                else if(strcmp(protocol_name,"ftp")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==20 || tcph_t->dest==21 || tcph_t->source==20 || tcph_t->source==21)
+                            return 1|negataion;
+
+                    }
+                //    return 0;
+                }
+
+                else if(strcmp(protocol_name,"telnet")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==23 || tcph_t->source==23)
+                            return 1|negataion;
+                      //  return 0|negataion;
+                    }
+                    //return 0|negataion;
+
+
+                }
+
+                else if(strcmp(protocol_name,"smtp")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==25 || tcph_t->source==25)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                   // return 0|negataion;
+
+
+                }
+
+                else if(strcmp(protocol_name,"pop3")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==110 || tcph_t->source==110)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                   // return 0|negataion;
+
+
+
+                }
+
+                else if(strcmp(protocol_name,"imap")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==143 || tcph_t->source==143)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                    //return 0|negataion;
+
+                }
+
+                else if(strcmp(protocol_name,"http")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==80 || tcph_t->source==80)
+                            return 1|negataion;
+                      //  return 0|negataion;
+                    }
+                    //return 0|negataion;
+
+                }
+
+                else if(strcmp(protocol_name,"https")==0){
+                    if(iph_t->protocol==6){
+                        tcph_t=tcp_hdr(skb);
+                        // include both server and client
+                        if(tcph_t->dest==443 || tcph_t->source==443)
+                            return 1|negataion;
+                        //return 0|negataion;
+                    }
+                    //return 0|negataion;
+                }
+
+            }
+            else
+                AUX_str_ptr++;
+        }
+        return 0|negataion;
+    }
+
+    else if(strcmp(rule_type,"sip")==0){
+
+
+
+    }
+
+
+}
+
+
+
+onebyte_p_t data_match(onebyte_p_t* data_name,struct sk_buff* skb){
+
+    kmc_i.AUX_functions_returns=get_index_of_data_in_datas(&kmc_i,data_name);
+    kmc_i.AUX_data_st_ptr=&kmc_i.datas[kmc_i.AUX_functions_returns];
+
+    // if the data doesnt have any rule it matches every traffic
+    if(kmc_i.AUX_data_st_ptr->current_rules==0) {
+        printk(KERN_INFO "no rule match\n");
+        return 1;
+    }
+    else{
+        int i;
+        // we check each rule in the data
+        for(i=0;i<kmc_i.AUX_data_st_ptr->current_rules;i++){
+            if(rule_match(kmc_i.AUX_data_st_ptr->rules[i].type,kmc_i.AUX_data_st_ptr->rules[i].value,skb)){
+
+                // If the rule matched and type of data was match any
+                // return 1
+                if(kmc_i.AUX_data_st_ptr->type==0)
+                    return 1;
+                else {
+                    // If the rule did not matched and type of data was match all
+                    // return 0
+                    if (kmc_i.AUX_data_st_ptr->type == 1)
+                        return 0;
+                }
+            }
+        }
+        // if non of the rules were matched in the case of match any
+        if(kmc_i.AUX_data_st_ptr->type==0)
+            return 0;
+
+        // if all of the rules were matched in the case of match all
+        return 1;
+
+    }
+}
+
+
+
+
+
+
+
+static unsigned int hfunc(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+
+    struct iphdr *iph;
+    struct udphdr *udph;
+
+    if (!skb)
+        return NF_ACCEPT;
+
+    mutex_lock_interruptible(&mylock);
+
+    iph_t = ip_hdr(skb);
+
+    // find policy_with_int by interface name
+    kmc_i.AUX_functions_returns = get_index_of_policyint_in_egress(&egress_policies, state->out->name);
+
+
+    if(kmc_i.AUX_functions_returns!=-1) {
+        // find policy with policy name
+        kmc_i.AUX_functions_returns = get_index_of_policy_in_policies(&kmc_i,
+                                                                      egress_policies.policyWithInterfaces[kmc_i.AUX_functions_returns].policy_name);
+        kmc_i.AUX_policy_st_ptr=&(kmc_i.policies[kmc_i.AUX_functions_returns]);
+        // if the policy doesnt have any data_with_action entry
+        // default policy is dropping the packet
+        if (kmc_i.AUX_policy_st_ptr->current_data_actions == 0) {
+            mutex_unlock(&mylock);
+            printk(KERN_INFO
+            "dropping no data action\n");
+            return NF_DROP;
+        } else {
+            int i;
+            for (i = 0; i < kmc_i.AUX_policy_st_ptr->current_data_actions; i++) {
+                kmc_i.AUX_functions_returns = data_match(kmc_i.AUX_policy_st_ptr->data_with_actions[i].data_name, skb);
+                // The data matched with the traffic
+                if (kmc_i.AUX_functions_returns) {
+                    // check the action corresponding to the data
+                    if (strcmp(kmc_i.AUX_policy_st_ptr->data_with_actions[i].action, "permit") ==0) {
+                        printk(KERN_INFO
+                        "ba in showd??????????\n");
+                        mutex_unlock(&mylock);
+                        return NF_ACCEPT;
+                    }
+                    // else drop the traffic
+                    mutex_unlock(&mylock);
+                    return NF_DROP;
+                }
+            }
+            // if no data matched , default policy is to drop
+            mutex_unlock(&mylock);
+            printk(KERN_INFO "drop no data matched\n");
+            return NF_DROP;
+
+        }
+    }
+    // if there was no policy found for the interface
+    // forward the traffic
+    mutex_unlock(&mylock);
+    return NF_ACCEPT;
+
+}
 
 
 
 static void hello_nl_recv_msg(struct sk_buff *skb) {
+
+
+
+
 
     struct nlmsghdr *nlh;
     int pid;
@@ -70,7 +530,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
     nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, 4, 0);
     NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
-
+    mutex_lock_interruptible(&mylock);
 
     // data definition
     if (kfwpmss->type == 0b00000000) {
@@ -246,7 +706,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
                     // reallocate for simple reply
-                    int i = 0;
+                    int i;
                     for (i = 0; i < kfwprepmss->page_cnt; i++) {
 
                         skb_out = nlmsg_new(kfwprepmss->page_size, 0);
@@ -1368,8 +1828,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfree(kfwprepmss);
 
 
-                    printk(KERN_INFO
-                    "new ingress policy was created\n");
+                    printk(KERN_INFO"new ingress policy was created\n");
                 } else {
 
                     // we already have defined a policy on the interface
@@ -1400,7 +1859,8 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
                     kfree(kfwprepmss);
 
                 }
-            } else {
+            }
+            else {
                 kmc_i.AUX_functions_returns = get_index_of_policyint_in_egress(&egress_policies,
                                                                                kmc_i.AUX_interface_name);
                 if (kmc_i.AUX_functions_returns == -1) {
@@ -1784,7 +2244,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
 
-    // update egress policies_cache cache
+        // update egress policies_cache cache
     else if (kfwpmss->type == 0b00001001){
         kfwprepmss = (kfwp_reply_t *) kmalloc(4, GFP_KERNEL);
 
@@ -1805,7 +2265,7 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
             printk(KERN_INFO"Error while sending bak to user\n");
 
 
-        int i=0;
+        int i;
         for(i=0;i<kfwprepmss->page_cnt;i++){
 
             skb_out = nlmsg_new(kfwprepmss->page_size,0);
@@ -1839,13 +2299,43 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 
 
     }
+    mutex_unlock(&mylock);
+
+
 }
 
-static int __init hello_init(void) {
 
+
+int firewall_starter(void*nothing){
+    printk(KERN_INFO "umad to threadddddd firewall \n");
+
+    nfho = (struct nf_hook_ops*)kcalloc(1, sizeof(struct nf_hook_ops), GFP_KERNEL);
+
+    /* Initialize netfilter hook */
+    nfho->hook 	= (nf_hookfn*)hfunc;		/* hook function */
+    nfho->hooknum 	= NF_INET_LOCAL_OUT;		/* received packets */
+    nfho->pf 	= PF_INET;			/* IPv4 */
+    nfho->priority 	= NF_IP_PRI_FIRST;		/* max hook priority */
+
+    nf_register_net_hook(&init_net, nfho);
+
+
+
+
+    return 0;
+
+}
+
+
+
+int talk2user_starter(void*nothing){
+
+    printk(KERN_INFO "umad to threadddddd \n");
 
     kmc_i.current_kfw_policies=0;
     kmc_i.current_kfw_datas=0;
+    port_num=(int *)kmalloc(50*sizeof(int),GFP_KERNEL);
+    start=port_num;
 
 
 
@@ -1865,6 +2355,22 @@ static int __init hello_init(void) {
 
     }
 
+    return 0;
+}
+
+
+
+
+
+static int __init hello_init(void) {
+
+
+    mutex_init(&mylock);
+
+
+    talk2user_thread = kthread_run(&talk2user_starter,NULL,"talk2user");
+    firewall_thread = kthread_run(&firewall_starter,NULL,"firewall_thread");
+
 
 
     return 0;
@@ -1873,11 +2379,17 @@ static int __init hello_init(void) {
 static void __exit hello_exit(void) {
 
     printk(KERN_INFO "exiting hello module\n");
+
+    nf_unregister_net_hook(&init_net, nfho);
     netlink_kernel_release(nl_sk);
+    kfree(nfho);
+    printk(KERN_INFO "exiting done\n");
+
+
+
 }
 
 module_init(hello_init);
 module_exit(hello_exit);
 
 MODULE_LICENSE("GPL");
-

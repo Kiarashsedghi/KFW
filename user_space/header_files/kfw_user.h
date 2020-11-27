@@ -10,7 +10,7 @@
  * */
 
 
-#ifndef KFW_KFW_H
+#ifndef KFW_KFW_
 #define KFW_KFW_H
 #endif //KFW_KFW_H
 

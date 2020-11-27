@@ -23,14 +23,14 @@
 
 // Parameters that indicate the length policies
 #define MAX_LEN_RULE_TYPE 10
-#define MAX_LEN_RULE_VALUE 50
+#define MAX_LEN_RULE_VALUE 40
 #define MAX_LEN_DATA_NAME 10
 #define MAX_LEN_POLICY_NAME 10
 #define MAX_LEN_INTERFACE_NAME 10
 #define MAX_LEN_ACTION_NAME 7
 #define MAX_LEN_POLICY_DIRECTION 4
 #define MAX_LEN_KFWP_ARG1 10
-#define MAX_LEN_KFWP_ARG2 32
+#define MAX_LEN_KFWP_ARG2 40
 #define MAX_LEN_KFWP_ARG3 10
 #define MAX_LEN_USER_COMMAND 40
 // --------------------------------------------
