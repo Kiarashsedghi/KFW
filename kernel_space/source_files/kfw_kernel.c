@@ -458,6 +458,8 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
         set_ip_addr_wildcard_mask(rule_value);
 
         ip_byte=inet_addr(ip_addr);
+        printk(KERN_INFO "::%s\n",ip_addr);
+        printk(KERN_INFO "::%s\n",wildcard_mask);
 
 
         //negate the wildcard mask
@@ -466,6 +468,10 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
         // check if the ip address match
         if((ip_byte & wm_byte)==((unsigned int)iph_t->daddr & wm_byte))
             return 1|negataion;
+
+
+        printk(KERN_INFO "::%d\n",ip_byte);
+        printk(KERN_INFO "::%d\n",wm_byte);
 
         return 0|negataion;
 
@@ -512,21 +518,32 @@ onebyte_p_t data_match(onebyte_p_t* data_name,struct sk_buff* skb){
 
                 // If the rule matched and type of data was match any
                 // return 1
-                if(kmc_i.AUX_data_st_ptr->type==0)
+                if(kmc_i.AUX_data_st_ptr->type==0){
+                    printk(KERN_INFO "rule inja 0\n");
                     return 1;
-                else {
-                    // If the rule did not matched and type of data was match all
-                    // return 0
-                    if (kmc_i.AUX_data_st_ptr->type == 1)
-                        return 0;
+
                 }
             }
+            else {
+                // If the rule did not matched and type of data was match all
+                // return 0
+                if (kmc_i.AUX_data_st_ptr->type == 1){
+                    printk(KERN_INFO "rule inja -1\n");
+                    return 0;
+
+
+                }
+            }
+
         }
         // if non of the rules were matched in the case of match any
+        printk(KERN_INFO "rule inja 1\n");
+
         if(kmc_i.AUX_data_st_ptr->type==0)
             return 0;
 
         // if all of the rules were matched in the case of match all
+        printk(KERN_INFO "rule inja 2\n");
         return 1;
 
     }
