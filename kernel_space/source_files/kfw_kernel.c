@@ -28,6 +28,10 @@
 #include <linux/inet.h>
 #include <linux/mutex.h>
 
+
+
+
+
 #include "linux/kfw_kernel.h"
 #include "linux/kfw_kernel_functions.h"
 
@@ -36,8 +40,26 @@ struct task_struct *talk2user_thread;
 struct task_struct *firewall_thread;
 
 struct sock *nl_sk = NULL;
-static struct nf_hook_ops *nfho = NULL;
+static struct nf_hook_ops *egress_kfwh = NULL;
+static struct nf_hook_ops *ingress_kfwh = NULL;
 
+
+
+union
+{
+    unsigned int integer;
+    unsigned char byte[4];
+} ip_u;
+
+union
+{
+    unsigned int integer;
+    unsigned char byte[4];
+} wm_u;
+
+
+unsigned int ip_byte;
+unsigned int wm_byte;
 
 
 struct mutex  mylock;
@@ -52,6 +74,9 @@ char protocol_name[8];
 char *AUX_str_ptr;
 char *AUX_str_ptr_temp;
 
+char ip_addr[16];
+char wildcard_mask[16];
+//222.222.222.222
 
 
 
@@ -90,6 +115,50 @@ int power(int x,int p){
         q*=x;
     return q;
 }
+//
+
+
+unsigned int inet_addr(char *str)
+{
+    int a, b, c, d;
+    char arr[4];
+    sscanf(str, "%d.%d.%d.%d", &a, &b, &c, &d);
+    arr[0] = a; arr[1] = b; arr[2] = c; arr[3] = d;
+    return *(unsigned int *)arr;
+}
+
+
+
+void set_ip_addr_wildcard_mask(onebyte_p_t *rule_value){
+
+    AUX_str_ptr=rule_value;
+    negataion=0;
+    if(*rule_value==(int)'!'){
+        AUX_str_ptr++;
+        negataion=1;
+    }
+    AUX_str_ptr_temp=AUX_str_ptr;
+
+    while(*AUX_str_ptr && *AUX_str_ptr!=(int)'/')
+        AUX_str_ptr++;
+    memset(ip_addr,0,16);
+    // abcd
+    memcpy(ip_addr,AUX_str_ptr_temp,AUX_str_ptr-AUX_str_ptr_temp);
+
+    memset(wildcard_mask,0,16);
+    // if user has not specified wildcard mask
+    // set it to 255.255.255.255
+    if(*AUX_str_ptr==0)
+        memcpy(wildcard_mask,"0.0.0.0",7);
+    else{
+        AUX_str_ptr++;
+        AUX_str_ptr_temp=AUX_str_ptr;
+        while(*AUX_str_ptr)
+            AUX_str_ptr++;
+        memcpy(wildcard_mask,AUX_str_ptr_temp,AUX_str_ptr-AUX_str_ptr_temp);
+    }
+
+}
 
 onebyte_p_t check_in_range(int *port_ranges,twobyte_p_t port,onebyte_p_t negation_flag){
 
@@ -100,7 +169,7 @@ onebyte_p_t check_in_range(int *port_ranges,twobyte_p_t port,onebyte_p_t negatio
     while(*port_ranges!=-2){
         if(*(port_ranges+1)==-1) {
             if (port >= *(port_ranges) && port <= *(port_ranges + 2)) {
-                    return 1|negation_flag;
+                return 1|negation_flag;
             }
             else
                 port_ranges += 3;
@@ -108,7 +177,7 @@ onebyte_p_t check_in_range(int *port_ranges,twobyte_p_t port,onebyte_p_t negatio
         else{
 
             if(*port_ranges==port){
-                    return 1|negation_flag;
+                return 1|negation_flag;
             }
             port_ranges++;
         }
@@ -227,13 +296,13 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                     //checking if the protocol was tcp
                     if(iph_t->protocol==6)
                         return 1|negataion;
-                   // return 0|negataion;
+                    // return 0|negataion;
                 }
 
                 else if(strcmp(protocol_name,"udp")==0){
                     if(iph_t->protocol==17)
                         return 1|negataion;
-                   // return 0|negataion;
+                    // return 0|negataion;
                 }
 
                 else if(strcmp(protocol_name,"dns")==0 || strcmp(protocol_name,"dns/udp")==0){
@@ -246,7 +315,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                             return 1|negataion;
                         //return 0|negataion;
                     }
-                 //   return 0|negataion;
+                    //   return 0|negataion;
                 }
 
                 else if(strcmp(protocol_name,"dns/tcp")==0){
@@ -269,7 +338,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                         //TODO we can reducre this check too
                         if(ntohs(udph_t->dest)==67 || ntohs(udph_t->dest)==68 || ntohs(udph_t->source)==67 || ntohs(udph_t->source)==68)
                             return 1|negataion;
-                       // return 0|negataion;
+                        // return 0|negataion;
                     }
                     //return 0|negataion;
                 }
@@ -290,7 +359,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
 
                 }
 
-                //TODO‌ recheck
+                    //TODO‌ recheck
                 else if(strcmp(protocol_name,"ftp")==0){
                     if(iph_t->protocol==6){
                         tcph_t=tcp_hdr(skb);
@@ -299,7 +368,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                             return 1|negataion;
 
                     }
-                //    return 0;
+                    //    return 0;
                 }
 
                 else if(strcmp(protocol_name,"telnet")==0){
@@ -308,7 +377,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                         // include both server and client
                         if(tcph_t->dest==23 || tcph_t->source==23)
                             return 1|negataion;
-                      //  return 0|negataion;
+                        //  return 0|negataion;
                     }
                     //return 0|negataion;
 
@@ -323,7 +392,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                             return 1|negataion;
                         //return 0|negataion;
                     }
-                   // return 0|negataion;
+                    // return 0|negataion;
 
 
                 }
@@ -336,7 +405,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                             return 1|negataion;
                         //return 0|negataion;
                     }
-                   // return 0|negataion;
+                    // return 0|negataion;
 
 
 
@@ -360,7 +429,7 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
                         // include both server and client
                         if(tcph_t->dest==80 || tcph_t->source==80)
                             return 1|negataion;
-                      //  return 0|negataion;
+                        //  return 0|negataion;
                     }
                     //return 0|negataion;
 
@@ -384,12 +453,42 @@ onebyte_p_t rule_match(onebyte_p_t *rule_type,onebyte_p_t *rule_value,struct sk_
         return 0|negataion;
     }
 
-    else if(strcmp(rule_type,"sip")==0){
+    else if(strcmp(rule_type,"dip")==0) {
+
+        set_ip_addr_wildcard_mask(rule_value);
+
+        ip_byte=inet_addr(ip_addr);
 
 
+        //negate the wildcard mask
+        wm_byte=~inet_addr(wildcard_mask);
+
+        // check if the ip address match
+        if((ip_byte & wm_byte)==((unsigned int)iph_t->daddr & wm_byte))
+            return 1|negataion;
+
+        return 0|negataion;
 
     }
 
+
+    else if(strcmp(rule_type,"sip")==0) {
+
+        set_ip_addr_wildcard_mask(rule_value);
+
+        ip_byte=inet_addr(ip_addr);
+
+        //negate the wildcard mask
+        wm_byte=~inet_addr(wildcard_mask);
+
+
+        // check if the ip address match
+        if((ip_byte & wm_byte)==((unsigned int)iph_t->saddr & wm_byte))
+            return 1|negataion;
+
+        return 0|negataion;
+
+    }
 
 }
 
@@ -439,7 +538,7 @@ onebyte_p_t data_match(onebyte_p_t* data_name,struct sk_buff* skb){
 
 
 
-static unsigned int hfunc(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+static unsigned int egress_hfunc(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
 
     struct iphdr *iph;
     struct udphdr *udph;
@@ -499,6 +598,66 @@ static unsigned int hfunc(void *priv, struct sk_buff *skb, const struct nf_hook_
 
 }
 
+
+static unsigned int ingress_hfunc(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+
+    struct iphdr *iph;
+    struct udphdr *udph;
+
+    if (!skb)
+        return NF_ACCEPT;
+
+    mutex_lock_interruptible(&mylock);
+
+    iph_t = ip_hdr(skb);
+
+    // find policy_with_int by interface name
+    kmc_i.AUX_functions_returns = get_index_of_policyint_in_ingress(&ingress_policies, state->in->name);
+
+
+    if(kmc_i.AUX_functions_returns!=-1) {
+        // find policy with policy name
+        kmc_i.AUX_functions_returns = get_index_of_policy_in_policies(&kmc_i,
+                                                                      ingress_policies.policyWithInterfaces[kmc_i.AUX_functions_returns].policy_name);
+        kmc_i.AUX_policy_st_ptr=&(kmc_i.policies[kmc_i.AUX_functions_returns]);
+        // if the policy doesnt have any data_with_action entry
+        // default policy is dropping the packet
+        if (kmc_i.AUX_policy_st_ptr->current_data_actions == 0) {
+            mutex_unlock(&mylock);
+            printk(KERN_INFO
+            "dropping no data action\n");
+            return NF_DROP;
+        } else {
+            int i;
+            for (i = 0; i < kmc_i.AUX_policy_st_ptr->current_data_actions; i++) {
+                kmc_i.AUX_functions_returns = data_match(kmc_i.AUX_policy_st_ptr->data_with_actions[i].data_name, skb);
+                // The data matched with the traffic
+                if (kmc_i.AUX_functions_returns) {
+                    // check the action corresponding to the data
+                    if (strcmp(kmc_i.AUX_policy_st_ptr->data_with_actions[i].action, "permit") ==0) {
+                        printk(KERN_INFO
+                        "ba in showd??????????\n");
+                        mutex_unlock(&mylock);
+                        return NF_ACCEPT;
+                    }
+                    // else drop the traffic
+                    mutex_unlock(&mylock);
+                    return NF_DROP;
+                }
+            }
+            // if no data matched , default policy is to drop
+            mutex_unlock(&mylock);
+            printk(KERN_INFO "drop no data matched\n");
+            return NF_DROP;
+
+        }
+    }
+    // if there was no policy found for the interface
+    // forward the traffic
+    mutex_unlock(&mylock);
+    return NF_ACCEPT;
+
+}
 
 
 static void hello_nl_recv_msg(struct sk_buff *skb) {
@@ -2309,21 +2468,29 @@ static void hello_nl_recv_msg(struct sk_buff *skb) {
 int firewall_starter(void*nothing){
     printk(KERN_INFO "umad to threadddddd firewall \n");
 
-    nfho = (struct nf_hook_ops*)kcalloc(1, sizeof(struct nf_hook_ops), GFP_KERNEL);
+    egress_kfwh = (struct nf_hook_ops*)kcalloc(1, sizeof(struct nf_hook_ops), GFP_KERNEL);
 
     /* Initialize netfilter hook */
-    nfho->hook 	= (nf_hookfn*)hfunc;		/* hook function */
-    nfho->hooknum 	= NF_INET_LOCAL_OUT;		/* received packets */
-    nfho->pf 	= PF_INET;			/* IPv4 */
-    nfho->priority 	= NF_IP_PRI_FIRST;		/* max hook priority */
+    egress_kfwh->hook 	= (nf_hookfn*)egress_hfunc;		/* hook function */
+    egress_kfwh->hooknum 	= NF_INET_LOCAL_OUT;		/* received packets */
+    egress_kfwh->pf 	= PF_INET;			/* IPv4 */
+    egress_kfwh->priority 	= NF_IP_PRI_FIRST;		/* max hook priority */
 
-    nf_register_net_hook(&init_net, nfho);
+    nf_register_net_hook(&init_net, egress_kfwh);
 
 
 
+    ingress_kfwh = (struct nf_hook_ops*)kcalloc(1, sizeof(struct nf_hook_ops), GFP_KERNEL);
+
+    /* Initialize netfilter hook */
+    ingress_kfwh->hook 	= (nf_hookfn*)ingress_hfunc;		/* hook function */
+    ingress_kfwh->hooknum 	= NF_INET_PRE_ROUTING;		/* received packets */
+    ingress_kfwh->pf 	= PF_INET;			/* IPv4 */
+    ingress_kfwh->priority 	= NF_IP_PRI_FIRST;		/* max hook priority */
+
+    nf_register_net_hook(&init_net, ingress_kfwh);
 
     return 0;
-
 }
 
 
@@ -2380,9 +2547,9 @@ static void __exit hello_exit(void) {
 
     printk(KERN_INFO "exiting hello module\n");
 
-    nf_unregister_net_hook(&init_net, nfho);
+    nf_unregister_net_hook(&init_net, egress_kfwh);
     netlink_kernel_release(nl_sk);
-    kfree(nfho);
+    kfree(egress_kfwh);
     printk(KERN_INFO "exiting done\n");
 
 
