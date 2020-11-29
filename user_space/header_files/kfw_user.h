@@ -196,8 +196,8 @@ struct kfwp_controls{
      *
      * */
 
-    kfwp_req_t *kfwp_msg;
-    kfwp_reply_t *kfwprep_msg;
+    kfwp_req_t *kfwp_req_msg;
+    kfwp_reply_t *kfwp_rep_msg;
 
     struct sockaddr_nl src_addr, dest_addr;
     struct nlmsghdr *nlh ;

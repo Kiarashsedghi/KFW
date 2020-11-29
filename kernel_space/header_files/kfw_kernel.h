@@ -64,6 +64,45 @@ struct kmc_controles{
     policy_t policies[10];
 
     onebyte_np_t AUX_functions_returns;
+    int *port_number_array;
+    int *port_number_array_start;
+
+    unsigned int ip_byte;
+    unsigned int wm_byte;
+    struct mutex  thread_lock;
+
+
+    kfwp_req_t *kfwpmss;
+    kfwp_reply_t *kfwprepmss;
+
+    struct udphdr *udph_t;
+    struct tcphdr *tcph_t;
+    char ip_addr[16];
+    char wildcard_mask[16];
+    char AUX_str_ptr;
+    char *AUX_str_ptr_temp;
+
+    struct sock *nl_sk ;
+    struct nf_hook_ops *egress_kfwh ;
+    struct nf_hook_ops *ingress_kfwh ;
+
+
+
+    struct task_struct *talk2user_thread;
+    struct task_struct *firewall_thread;
+
+
+    onebyte_p_t *port_number_ptr;
+    onebyte_p_t *port_number_ptr_temp;
+
+    twobyte_p_t port_number;
+
+    struct iphdr *iph_t;
+    onebyte_p_t AUX_page[KFW_PAGE_SIZE];
+    onebyte_p_t negation_flag;
+
+
+    char protocol_name[8];
 
 
 

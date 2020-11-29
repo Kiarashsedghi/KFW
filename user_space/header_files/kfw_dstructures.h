@@ -314,7 +314,6 @@ struct policy_with_int{
 
      * */
 
-    //TODO‌ interface type or code ??
     onebyte_p_t policy_name[MAX_LEN_POLICY_NAME];
     onebyte_p_t interface_name[MAX_LEN_INTERFACE_NAME];
 };

@@ -23,13 +23,432 @@
 #pragma clang diagnostic ignored "-Wpointer-sign"
 
 
+twobyte_p_t  talk2module(consistency_flags_t *consistencyFlags, kfw_controls_t *kfw_controls, kfwp_controls_t *kfwp_controls , onebyte_p_t type, onebyte_p_t*arg1, onebyte_p_t  *arg2, onebyte_p_t *arg3, data_t *data_ptr , policy_t * policy_ptr, ingress_policies_t *ingress_policies_ptr, egress_policies_t *egress_policies_t){
+    /*
+     * This function talks with kernel module with KFWP protocol.
+     *
+     * It sends request with specific type (arg: type) and receives KFWP replies and if
+     * the reply indicates that kernel is going to send data to send data,this function will
+     * receive those datas and writes theme in specified destinations on the cache:
+     *              data_ptr
+     *              policy_ptr
+     *              ingress_policies_ptr
+     *              egress_policies_ptr
+     *
+     * or will allocate those spaces on the cache and then writes those datas.
+     *
+     * */
+
+
+    kfwp_controls->nlh=NULL;
+
+    kfwp_controls->sock_fd=socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
+
+    if(kfwp_controls->sock_fd<0)
+        return -1;
+
+    memset(&kfwp_controls->src_addr, 0, sizeof(kfwp_controls->src_addr));
+    kfwp_controls->src_addr.nl_family = AF_NETLINK;
+    kfwp_controls->src_addr.nl_pid = getpid(); /* self pid */
+
+    bind(kfwp_controls->sock_fd, (struct sockaddr*)&kfwp_controls->src_addr, sizeof(kfwp_controls->src_addr));
+
+    memset(&kfwp_controls->dest_addr, 0, sizeof(kfwp_controls->dest_addr));
+    kfwp_controls->dest_addr.nl_family = AF_NETLINK;
+    kfwp_controls->dest_addr.nl_pid = 0; /* For Linux Kernel */
+    kfwp_controls->dest_addr.nl_groups = 0; /* unicast */
+
+
+    kfwp_controls->nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(1024));
+    memset(kfwp_controls->nlh, 0, NLMSG_SPACE(1024));
+    kfwp_controls->nlh->nlmsg_len = NLMSG_SPACE(1024);
+    kfwp_controls->nlh->nlmsg_pid = getpid();
+    kfwp_controls->nlh->nlmsg_flags = 0;
+
+
+
+    kfwp_controls->iov.iov_base = (void *)kfwp_controls->nlh;
+    kfwp_controls->iov.iov_len = kfwp_controls->nlh->nlmsg_len;
+    kfwp_controls->msg.msg_name = (void *)&kfwp_controls->dest_addr;
+    kfwp_controls->msg.msg_namelen = sizeof(kfwp_controls->dest_addr);
+    kfwp_controls->msg.msg_iov = &kfwp_controls->iov;
+    kfwp_controls->msg.msg_iovlen = 1;
 
 
 
 
-//TODO‌ refine this function
+
+    // create new request message called kfwp_req_msg
+    kfwp_controls->kfwp_req_msg=(kfwp_req_t *)malloc(sizeof(kfwp_req_t));
+
+    // set all bits of the request message to 0
+    bzero(kfwp_controls->kfwp_req_msg, sizeof(kfwp_req_t));
+
+    // set request message type
+    kfwp_controls->kfwp_req_msg->type=type;
+
+    // arg1 should not be copied for (show datas , show policies) commands
+    // in those commands , arg1 is NULL
+    if(arg1!=NULL)
+        strcpy(kfwp_controls->kfwp_req_msg->arg1, arg1);
+
+    // This checking is for (show datas and show policies) that does not have arg2 like policy definition
+    if(arg2!=NULL) {
+        // for data definition , arg2 is holding only the type of data which is only 1 byte
+        // so we are copying only 1 byte to arg2
+        if (type == 0b00000000)
+            memcpy(kfwp_controls->kfwp_req_msg->arg2, arg2, 1);
+        else
+            memcpy(kfwp_controls->kfwp_req_msg->arg2, arg2, strlen(arg2));
+    }
+    // This checking is for commands except service command that do not have
+    // arg3
+    if (arg3 != NULL)
+        memcpy(kfwp_controls->kfwp_req_msg->arg3, arg3, strlen(arg3));
 
 
+
+    // copy data from the message to nlh
+    memcpy(NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwp_req_msg, sizeof(kfwp_req_t));
+
+    printd("Request created\n");
+
+
+    sendmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+    printd("Request sent to the kernel\n");
+
+
+    free(kfwp_controls->kfwp_req_msg);
+
+
+    // create new reply message called kfwp_rep_msg
+    kfwp_controls->kfwp_rep_msg=(kfwp_reply_t *)malloc(4);
+
+
+    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+
+    printd("reply received from kernel\n");
+
+
+
+    // copy the reply from nlh to kfwp_rep_msg
+    memcpy(kfwp_controls->kfwp_rep_msg, NLMSG_DATA(kfwp_controls->nlh), 4);
+
+
+    // checking status of the reply
+    if((kfwp_controls->kfwp_rep_msg->status) == 0b00000000) {
+        if (type == 0b00000000) {
+
+            // if page_cnt was not 0 means kernel told us that it is going to
+            // send us data
+            if (kfwp_controls->kfwp_rep_msg->page_cnt != 0) {
+
+                if (data_ptr == NULL) {
+                    kfw_controls->AUX_data_st_ptr = &kfw_controls->datas_cache[kfw_controls->current_kfw_datas];
+                    data_ptr=kfw_controls->AUX_data_st_ptr;
+                    kfw_controls->current_kfw_datas++;
+                    printd("new data allocated on cache\n");
+                }
+
+                // receiving data from kernel
+                for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++) {
+                    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                    if (i == kfwp_controls->kfwp_rep_msg->page_cnt - 1) {
+                        memcpy((void *) data_ptr + i * kfwp_controls->kfwp_rep_msg->page_size,
+                               NLMSG_DATA(kfwp_controls->nlh),
+                               sizeof(data_t) - i * kfwp_controls->kfwp_rep_msg->page_size + 1);
+                    }else
+                        memcpy((void *) data_ptr + i * kfwp_controls->kfwp_rep_msg->page_size,
+                               NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwp_rep_msg->page_size);
+                }
+
+                // set consistency flag to 1
+                data_ptr->consistency=1;
+
+
+                close(kfwp_controls->sock_fd);
+
+                // return number of bytes written to the cache
+                return  sizeof(data_t);
+
+            } else
+                printd("no data was sent from kernel\n");
+        }
+
+        else if(type == 0b10000000)
+            printd("data deleted successfully!\n");
+
+        else if(type == 0b10000010)
+            printd("policy deleted successfully!\n");
+
+        else if(type==0b00001110){
+
+            // receiving data from kernel
+            // receiving only headers of each data from kernel
+            for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                memcpy((void *)&kfw_controls->datas_cache + i * sizeof(data_t) , NLMSG_DATA(kfwp_controls->nlh) , kfwp_controls->kfwp_rep_msg->page_size);
+
+                // make consistency of each data in cache to 0
+                kfw_controls->datas_cache[i].consistency=0;
+            }
+
+            printd("writing headers to cache completed\n");
+
+            //update number of current datas in cache
+            kfw_controls->current_kfw_datas=kfwp_controls->kfwp_rep_msg->page_cnt;
+
+            // set data_cache consistency flag to 1
+            // later show datas does not need any request to be sent
+            consistencyFlags->data_cache=1;
+
+
+        }
+
+
+        else if(type==0b00001111){
+            // receving data from kernel
+            for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+
+                memcpy((void *)&kfw_controls->policies_cache + i * sizeof(policy_t) , NLMSG_DATA(kfwp_controls->nlh) , kfwp_controls->kfwp_rep_msg->page_size);
+
+                // make consistency of each policy in cache to 0
+                kfw_controls->policies_cache[i].consistency=0;
+            }
+            printd("writing headers to cache completed\n");
+
+            //update number of current policy in cache
+            kfw_controls->current_kfw_policies=kfwp_controls->kfwp_rep_msg->page_cnt;
+
+            // set policy_cache consistency flag to 1
+            // later show policies does not need request
+            consistencyFlags->policy_cache=1;
+
+        }
+
+
+        else if (type == 0b00000010){
+            // if page_cnt was not 0 means kernel told us that it is going to
+            // send us data
+            if (kfwp_controls->kfwp_rep_msg->page_cnt != 0) {
+
+                if (data_ptr == NULL) {
+
+                    kfw_controls->AUX_policy_st_ptr= &kfw_controls->policies_cache[kfw_controls->current_kfw_policies];
+                    policy_ptr=kfw_controls->AUX_policy_st_ptr;
+                    kfw_controls->current_kfw_policies++;
+                    printd("new policy allocated on cache\n");
+                }
+
+                // receving data from kernel
+                for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++) {
+                    recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                    if (i == kfwp_controls->kfwp_rep_msg->page_cnt - 1) {
+                        memcpy((void *) policy_ptr + i * kfwp_controls->kfwp_rep_msg->page_size,
+                               NLMSG_DATA(kfwp_controls->nlh),
+                               sizeof(policy_t) - i * kfwp_controls->kfwp_rep_msg->page_size + 1);
+                    }else
+                        memcpy((void *) policy_ptr + i * kfwp_controls->kfwp_rep_msg->page_size,
+                               NLMSG_DATA(kfwp_controls->nlh), kfwp_controls->kfwp_rep_msg->page_size);
+                }
+
+                // set consistency flag to 1
+                policy_ptr->consistency=1;
+
+
+                close(kfwp_controls->sock_fd);
+
+                // return number of bytes written to the cache
+                return  sizeof(policy_t);
+
+            } else
+                printd("no policy was sent from kernel\n");
+
+        }
+
+
+            // updating ingress cache
+        else if (type==0b00001000){
+
+            // receiving data from kernel
+            for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                memcpy((void *)&ingress_policies_ptr->policyWithInterfaces + i * sizeof(policy_with_int_t) , NLMSG_DATA(kfwp_controls->nlh) , kfwp_controls->kfwp_rep_msg->page_size);
+            }
+
+            printd("writing ingress policies  to cache finished\n");
+
+            //set total number of ingress policies_cache
+            ingress_policies_ptr->current_ingress_policies=kfwp_controls->kfwp_rep_msg->page_cnt;
+
+            // set consistency flag to 1
+            consistencyFlags->ingress_policy_cache=1;
+
+        }
+
+
+            // updating egress cache
+        else if (type==0b00001001){
+            // receiving data from kernel
+            for(int i=0;i<kfwp_controls->kfwp_rep_msg->page_cnt; i++){
+                recvmsg(kfwp_controls->sock_fd, &kfwp_controls->msg, 0);
+                memcpy((void *)&egress_policies_t->policyWithInterfaces + i * sizeof(policy_with_int_t) , NLMSG_DATA(kfwp_controls->nlh) , kfwp_controls->kfwp_rep_msg->page_size);
+            }
+            printd("writing egress policies  to cache finished\n");
+
+            //set total number of egress policies_cache
+            egress_policies_t->current_egress_policies=kfwp_controls->kfwp_rep_msg->page_cnt;
+
+            // set consistency flag to 1
+            consistencyFlags->egress_policy_cache=1;
+        }
+
+        else if(type==0b00000001 || type==0b10000001)
+            printd("rule modified(added/deleted/changed) successfully\n");
+
+
+        else if(type==0b00000011 || type==0b10000011)
+            printd("data_with_action modified(added/deleted/changed) successfully\n");
+
+
+        else if(type == 0b01111110)
+            printd("clear command cleared all rules successfully\n");
+
+        else if(type == 0b01111111)
+            printd("clear command cleared all data actions successfully\n");
+
+        else if(type==0b00000100){
+            printd("service command issued successfully\n");
+
+            // setting consistency flag
+            // check whether arg3 was in or out because it is important to change ingress or egress
+            if(strcmp(arg3, "in") == 0) {
+                printd("ingress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->ingress_policy_cache = 0;
+            }
+            else{
+                printd("egress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->egress_policy_cache = 0;
+            }
+        }
+
+
+        else if(type==0b10000100){
+            printd("(no) service command issued successfully\n");
+
+            // setting consistency flag
+            // check whether arg3 was in or out because it is important to change ingress or egress
+            if(strcmp(arg3, "in") == 0) {
+                printd("ingress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->ingress_policy_cache = 0;
+            }
+            else{
+                printd("egress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->egress_policy_cache = 0;
+            }
+        }
+
+    }
+
+    else if((kfwp_controls->kfwp_rep_msg->status ) == 0b00000001) {
+
+        if(type==0b00000000)//TODO
+            printe("Cannot change type for data %s\nTo change the type first delete the type and recreate it"); //TODO‌
+
+
+        else if(type==0b00000011)
+            printe("data does not exist"); //TODO‌ name of data
+
+
+        else if(type==0b10000010) {
+            printf("policy cannot be deleted because an ingress policy depends on it\n");//TODO
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+        else if(type == 0b00000100 || type==0b10000100)
+            printf("policy does not exist\n"); //TODO nameof polic
+
+    }
+
+    else if ((kfwp_controls->kfwp_rep_msg->status) == 0b00000010){
+        if(type==0b10000000) {
+            printf("data does not exist for deletion\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the data has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+
+        else if(type==0b10000010) {
+            printf("policy cannot be deleted because an egress policy depends on it\n");
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+
+        }
+
+
+        else if(type==0b10000100)
+            printf("policy does exist on kfw but was not set on this interface in this direction\n");
+    }
+
+    else if ((kfwp_controls->kfwp_rep_msg->status) == 0b00000011){
+        if(type==0b10000000) {
+            printf("data cannot be deleted because a policy depends on it\n");//TODO name
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the data has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+        }
+        else if(type==0b10000010) {
+            printf("policy does not exist for deletion\n");//TODO name
+            close(kfwp_controls->sock_fd);
+            // return one is just to tell that the policy has not been deleted
+            // and it is useful to find out whether should we delete the cache or not
+            return 1;
+
+        }
+
+        else if (type==0b10000100)
+            printf("there has no policy set on the interface specified\n");
+    }
+
+    else if((kfwp_controls->kfwp_rep_msg->status) == 0b00000100){
+        if(type==0b00000000)
+            printf("data does not exist\n");//TODO name
+        else if(type==0b00000010)
+            printf("policy does not exist\n");//TODO name
+    }
+
+    else if((kfwp_controls->kfwp_rep_msg->status) == 0b10000000){
+        if(type==0b00000100) {
+
+            printf("policy existed and updated \n");//TODO name delete?
+
+            // setting consistency flag
+            // check whether arg3 was in or out because it is important to change ingress or egress
+            if(strcmp(arg3, "in") == 0) {
+                printf("ingress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->ingress_policy_cache = 0;
+            }
+            else{
+                printf("egress consistency flag set to 0(inconsistent)\n");
+                consistencyFlags->egress_policy_cache = 0;
+            }
+
+        }
+    }
+
+    close(kfwp_controls->sock_fd);
+
+    return 0;
+
+
+}
 
 
 
@@ -71,39 +490,32 @@ onebyte_np_t getindex_policy_in_policy_cache(kfw_controls_t *kfw_controls, oneby
 
 }
 
-
-void strnsplit(onebyte_p_t *str, onebyte_p_t position , onebyte_p_t * dst){
-
+onebyte_p_t is_port_in_range(int *port_ranges, twobyte_p_t port, onebyte_p_t negation){
     /*
-     * This function splits a string with whitespace( newline, space, horizental tab) delimiter,
-     * and writes the specified(position) part that was created because of splitting to the (dst).
+     * This function takes an array of ports (which is holding ports or range of ports)
+     * and checks if a port number is in range of that ports array or not
      *
-     * This function usage in kfw is for (show commands)
      * */
 
-
-    bzero(dst,strlen(dst));
-    onebyte_p_t element_pos=-1;
-    onebyte_p_t *temp;
-    while(*str){
-        if(*str==32 || *str==10 || *str==9)
-            str++;
-        else{
-            element_pos++;
-            if(element_pos==position){
-                temp=str;
-                while (*str != 32 && *str != 10 && *str != 9)
-                    str++;
-                memcpy(dst,temp,str-temp);
-                break;
+    while(*port_ranges!=-2){
+        if(*(port_ranges+1)==-1) {
+            if (port >= *(port_ranges) && port <= *(port_ranges + 2)) {
+                return 1|negation;
             }
             else
-                while (*str != 32 && *str != 10 && *str != 9)
-                    str++;
+                port_ranges += 3;
+        }
+        else{
+
+            if(*port_ranges==port){
+                return 1|negation;
+            }
+            port_ranges++;
         }
     }
-}
 
+    return 0|negation;
+}
 
 
 
@@ -203,7 +615,6 @@ void split_data_action_def_del_cmd(onebyte_p_t *data_with_action_cmd, onebyte_p_
     }
 }
 
-
 void split_policy_def_del_show_cmd(onebyte_p_t *policy_def, onebyte_p_t *policy_name , onebyte_p_t name_pos , onebyte_p_t show_or_no_len){
 
     /*
@@ -263,7 +674,6 @@ void split_policy_def_del_show_cmd(onebyte_p_t *policy_def, onebyte_p_t *policy_
     }
 }
 
-
 void split_rule_def_del_cmd(onebyte_p_t *rule_def, onebyte_p_t *rule_name, onebyte_p_t *rule_value , onebyte_p_t name_pos , onebyte_p_t value_pos){
 
     /*
@@ -313,7 +723,6 @@ void split_rule_def_del_cmd(onebyte_p_t *rule_def, onebyte_p_t *rule_name, oneby
 
    }
 }
-
 
 void split_data_def_del_cmd(onebyte_p_t * data_def , onebyte_p_t *data_name , onebyte_p_t *type , onebyte_p_t data_name_pos , onebyte_p_t show_or_no_len){
 
@@ -385,8 +794,6 @@ void split_data_def_del_cmd(onebyte_p_t * data_def , onebyte_p_t *data_name , on
         *type=0;
 
 }
-
-
 
 void compile_kfw_cmds_regexes(regex__t *kfwregex){
     /*
@@ -483,10 +890,107 @@ void compile_kfw_cmds_regexes(regex__t *kfwregex){
 }
 
 
+
+
+void policy_del_cache(kfw_controls_t *kfw_controls){
+    /*
+     * This function will delete a specific policy from cache
+     * Policy name was written in kfw_controls->AUX_policy_name
+     * */
+    kfw_controls->AUX_functions_returns= getindex_policy_in_policy_cache(kfw_controls,
+                                                                        kfw_controls->AUX_policy_name);
+
+    // deletion policy is same as before
+    if(kfw_controls->AUX_functions_returns != -1){
+        if(kfw_controls->AUX_functions_returns == kfw_controls->current_kfw_policies - 1) {
+            if(kfw_controls->current_kfw_policies-1!=-1)
+                kfw_controls->current_kfw_policies--;
+
+
+        }
+        else{
+            kfw_controls->AUX_functions_returns++;
+            while(kfw_controls->AUX_functions_returns <= kfw_controls->current_kfw_policies - 1){
+                memcpy(&kfw_controls->policies_cache[kfw_controls->AUX_functions_returns - 1], &kfw_controls->policies_cache[kfw_controls->AUX_functions_returns], sizeof(policy_t));
+                kfw_controls->AUX_functions_returns++;
+            }
+            //update total number of policies_cache
+            kfw_controls->current_kfw_policies--;
+        }
+    }
+
+
+}
+
+void data_del_cache(kfw_controls_t *kfw_controls){
+    /*
+    * This function will delete a specific data from cache
+    * Data name was written in kfw_controls->AUX_data_name
+    * */
+
+    kfw_controls->AUX_functions_returns= getindex_data_in_data_cache(kfw_controls,
+                                                                    kfw_controls->AUX_data_name);
+
+    if(kfw_controls->AUX_functions_returns != -1){
+        // Delete the data from the cache
+        // Delete the data from datas_cache array.
+        // Deletion policy is same as before.
+        if(kfw_controls->AUX_functions_returns == kfw_controls->current_kfw_datas - 1) {
+            if (kfw_controls->current_kfw_datas - 1 != -1)
+                kfw_controls->current_kfw_datas--;
+        }
+        else{
+            kfw_controls->AUX_functions_returns++;
+            while(kfw_controls->AUX_functions_returns <= kfw_controls->current_kfw_datas - 1){
+                memcpy(&kfw_controls->datas_cache[kfw_controls->AUX_functions_returns - 1], &kfw_controls->datas_cache[kfw_controls->AUX_functions_returns], sizeof(data_t));
+                kfw_controls->AUX_functions_returns++;
+            }
+            //update total number of datas in the cache
+            kfw_controls->current_kfw_datas--;
+        }
+    }
+
+
+}
+
+
+
+void strnsplit(onebyte_p_t *str, onebyte_p_t position , onebyte_p_t * dst){
+
+    /*
+     * This function splits a string with whitespace( newline, space, horizental tab) delimiter,
+     * and writes the specified(position) part that was created because of splitting to the (dst).
+     *
+     * This function usage in kfw is for (show commands)
+     * */
+
+
+    bzero(dst,strlen(dst));
+    onebyte_p_t element_pos=-1;
+    onebyte_p_t *temp;
+    while(*str){
+        if(*str==32 || *str==10 || *str==9)
+            str++;
+        else{
+            element_pos++;
+            if(element_pos==position){
+                temp=str;
+                while (*str != 32 && *str != 10 && *str != 9)
+                    str++;
+                memcpy(dst,temp,str-temp);
+                break;
+            }
+            else
+                while (*str != 32 && *str != 10 && *str != 9)
+                    str++;
+        }
+    }
+}
+
 void printe(char * error_message){
 
     /*
-     * This function will print error messages with customized style 
+     * This function will print error messages with customized style
      *
      * */
 
@@ -496,6 +1000,26 @@ void printe(char * error_message){
 }
 
 
+void printd(char * error_message){
 
+    /*
+     * This function will print error messages with customized style
+     *
+     * */
 
+    printf("\033[1;33m");
+    printf("ERR<200c>: %s\n",error_message);
+    printf("\033[0m");
+}
+
+int power(int x,int p){
+    /*
+     * power(x,p) == x^p
+     * */
+
+    int q=1;
+    for(int i=0;i<p;i++)
+        q*=x;
+    return q;
+}
 

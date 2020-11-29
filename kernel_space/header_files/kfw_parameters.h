@@ -48,6 +48,9 @@
 // --------------------------------------------
 
 
+#define KFW_PAGE_SIZE 200
+#define KFW_POLICY_HEADER_SIZE 12
+#define KFW_DATA_HEADER_SIZE 13
 
 // Parameters that control netlink
 #define NETLINK_USER 31

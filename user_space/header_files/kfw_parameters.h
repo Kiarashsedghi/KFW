@@ -67,12 +67,12 @@
  *
  *
  * */
-// TODO‌ make (value)? value part of rule for simplicity of deletion for user
 
 #define REGEX_RULE_DEFINITION "^(\\s*(sip|dip)(\\s+not)?\\s+((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))(\\/((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])))?\\s*)$|^\\s*((proto)\\s+(not\\s+)?((udp|tcp|dhcp|icmp|igmp|ftp|telnet|smtp|pop3|imap|http|https|dns(\\/tcp|\\/udp)?))(,(udp|tcp|dhcp|icmp|igmp|ftp|telnet|smtp|pop3|imap|http|https|dns(\\/tcp|udp)?))*)\\s*$|^(\\s*(sudp|stcp|dtcp|dudp)(\\s+not)?\\s+(([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?)(,(([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?))*\\s*)$"
 
 
-#define REGEX_RULE_DELETION "^\\s*a\\s*$"
+#define REGEX_RULE_DELETION "^(\\s*(no\\s+)(sip|dip)\\s*)$|^\\s*(no\\s+)(proto)\\s*$|^\\s*(no\\s+)(sudp|stcp|dtcp|dudp)\\s*$"
+
 
 #define REGEX_DATA_DEFINITION "^\\s*data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"
 #define REGEX_DATA_DELETION "^\\s*(no\\s+)data\\s+[0-9a-zA-Z_]+(\\s+(any|all))?\\s*$"

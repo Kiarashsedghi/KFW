@@ -1,7 +1,12 @@
 INSTALL_DIR=modules
 ifneq (${KERNELRELEASE},)
+
+
         obj-m :=cdd107.o
 cdd107-objs := kfw_kernel.o kfw_kernel_functions.o
+
+
+
 
 else
         KERNELDIR ?= /lib/modules/$(shell uname -r)/build
